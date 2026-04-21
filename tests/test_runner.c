@@ -148,6 +148,62 @@ static int test_parse_arguments_benchmark_long_success(void)
            config.input_path[0] == '\0';
 }
 
+static int test_parse_arguments_server_success(void)
+{
+    AppConfig config;
+    char *argv[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server",
+        "--port", "18080",
+        "--threads", "3",
+        "--queue-size", "7"
+    };
+
+    if (!parse_arguments(12, argv, &config)) {
+        return 0;
+    }
+
+    return strcmp(config.schema_dir, "schemas") == 0 &&
+           strcmp(config.data_dir, "data") == 0 &&
+           strcmp(config.port, "18080") == 0 &&
+           config.server_mode == 1 &&
+           config.thread_count == 3 &&
+           config.queue_size == 7 &&
+           config.interactive_mode == 0 &&
+           config.benchmark_mode == 0 &&
+           config.input_path[0] == '\0';
+}
+
+static int test_parse_arguments_server_requires_port(void)
+{
+    AppConfig config;
+    char *argv[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server"
+    };
+
+    return !parse_arguments(6, argv, &config);
+}
+
+static int test_parse_arguments_reject_server_mixed_modes(void)
+{
+    AppConfig config;
+    char *argv[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server",
+        "--port", "18080",
+        "--interactive"
+    };
+
+    return !parse_arguments(9, argv, &config);
+}
+
 static int test_parse_arguments_reject_mixed_modes(void)
 {
     AppConfig config;
@@ -889,6 +945,58 @@ static int test_insert_and_select_execution(void)
     }
 
     return file_contains_text(output_path, "name\tage\nkim\t20\nlee\t30\n");
+}
+
+static int test_run_sql_text_uses_config_output(void)
+{
+    AppConfig config;
+    ErrorInfo error;
+    FILE *output_file;
+    char base_dir[256];
+    char schema_dir[256];
+    char data_dir[256];
+    char schema_path[512];
+    char output_path[512];
+
+    if (!create_temp_workspace(base_dir,
+                               sizeof(base_dir),
+                               schema_dir,
+                               sizeof(schema_dir),
+                               data_dir,
+                               sizeof(data_dir),
+                               "sqlproc_output_stream_")) {
+        return 0;
+    }
+
+    snprintf(schema_path, sizeof(schema_path), "%s/users.schema", schema_dir);
+    snprintf(output_path, sizeof(output_path), "%s/output.txt", base_dir);
+
+    if (!write_text_file(schema_path, "id:int,name:string,age:int\n")) {
+        return 0;
+    }
+
+    output_file = fopen(output_path, "wb");
+    if (output_file == NULL) {
+        return 0;
+    }
+
+    memset(&config, 0, sizeof(config));
+    memset(&error, 0, sizeof(error));
+    snprintf(config.schema_dir, sizeof(config.schema_dir), "%s", schema_dir);
+    snprintf(config.data_dir, sizeof(config.data_dir), "%s", data_dir);
+    config.output = output_file;
+
+    if (!run_sql_text(&config,
+                      "INSERT INTO users (id, name, age) VALUES (1, 'kim', 20);"
+                      "SELECT * FROM users WHERE id = 1;",
+                      &error)) {
+        fclose(output_file);
+        return 0;
+    }
+
+    fclose(output_file);
+    return file_contains_text(output_path, "[INDEX] WHERE id = 1\n") &&
+           file_contains_text(output_path, "id\tname\tage\n1\tkim\t20\n");
 }
 
 static int test_storage_print_rows_without_data_file(void)
@@ -1907,6 +2015,21 @@ int main(void)
         return 1;
     }
 
+    if (!test_parse_arguments_server_success()) {
+        fprintf(stderr, "test_parse_arguments_server_success failed\n");
+        return 1;
+    }
+
+    if (!test_parse_arguments_server_requires_port()) {
+        fprintf(stderr, "test_parse_arguments_server_requires_port failed\n");
+        return 1;
+    }
+
+    if (!test_parse_arguments_reject_server_mixed_modes()) {
+        fprintf(stderr, "test_parse_arguments_reject_server_mixed_modes failed\n");
+        return 1;
+    }
+
     if (!test_parse_arguments_reject_mixed_modes()) {
         fprintf(stderr, "test_parse_arguments_reject_mixed_modes failed\n");
         return 1;
@@ -1974,6 +2097,11 @@ int main(void)
 
     if (!test_insert_and_select_execution()) {
         fprintf(stderr, "test_insert_and_select_execution failed\n");
+        return 1;
+    }
+
+    if (!test_run_sql_text_uses_config_output()) {
+        fprintf(stderr, "test_run_sql_text_uses_config_output failed\n");
         return 1;
     }
 
