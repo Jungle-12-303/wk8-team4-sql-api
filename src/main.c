@@ -17,7 +17,7 @@
  *   --interactive를 주면 sqlproc> 프롬프트에서 SQL을 한 줄씩 입력합니다.
  * - -b 또는 --benchmark:
  *   벤치마크 더미 데이터를 만들고 PK / non-PK 조회 시간을 비교한 뒤
- *   interactive 모드로 이어집니다.
+ *   종료합니다.
  *
  * - --server --port <port>:
  *   HTTP API 서버를 실행합니다. POST /query로 SQL을 받고,

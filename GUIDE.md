@@ -288,7 +288,7 @@ typedef struct {
 
 `interactive_mode == 1`이면 `input_path` 대신 `stdin`에서 한 줄씩 읽습니다.
 `benchmark_mode == 1`이면 먼저 benchmark 전용 CSV와 SQL 파일을 만들고,
-그 뒤 같은 실행 안에서 interactive 모드로 이어집니다.
+결과 표를 출력한 뒤 종료합니다.
 
 ---
 
@@ -675,7 +675,7 @@ mkdir -p /tmp/data
 - 시작하면 `>> 벤치마크를 위한 더미 데이터는 몇 개를 생성하시겠습니까? : ` 프롬프트가 뜹니다.
 - 입력한 개수만큼 `/tmp/data/benchmark/` 아래에 `schemas/`, `data/`, `sql/`을 만듭니다.
 - benchmark는 `pk_lookup.sql`, `non_pk_lookup.sql`을 같은 `run_sql_file()` 경로로 실행해 시간을 잽니다.
-- 표를 출력한 뒤에는 자동으로 `sqlproc>` interactive 프롬프트로 넘어갑니다.
+- 표를 출력한 뒤에는 프로그램이 종료됩니다.
 
 ### 스키마 파일 예시
 

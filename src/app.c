@@ -338,7 +338,7 @@ int run_program(const AppConfig *config)
             return 1;
         }
 
-        return run_interactive_program(config);
+        return 0;
     }
 
     if (config->interactive_mode) {

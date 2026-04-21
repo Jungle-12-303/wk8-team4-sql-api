@@ -2079,7 +2079,7 @@ static int test_run_program_benchmark_mode(void)
     config.benchmark_mode = 1;
 
     if (!capture_run_program_with_input(&config,
-                                        "abc\n0\n100\n.exit\n",
+                                        "abc\n0\n100\n",
                                         output_path)) {
         return 0;
     }
@@ -2095,9 +2095,12 @@ static int test_run_program_benchmark_mode(void)
 
     if (!file_contains_text(output_path, "PK (id, cold)") ||
         !file_contains_text(output_path, "PK (id, warm)") ||
-        !file_contains_text(output_path, "not PK (name)") ||
-        !file_contains_text(output_path, "sqlproc interactive mode\n") ||
-        !file_contains_text(output_path, "sqlproc> ")) {
+        !file_contains_text(output_path, "not PK (name)")) {
+        return 0;
+    }
+
+    if (file_contains_text(output_path, "sqlproc interactive mode\n") ||
+        file_contains_text(output_path, "sqlproc> ")) {
         return 0;
     }
 
