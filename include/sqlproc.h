@@ -2,6 +2,7 @@
 #define SQLPROC_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "bptree.h"
 
@@ -97,8 +98,13 @@ typedef struct {
     char schema_dir[256];
     char data_dir[256];
     char input_path[256];
+    char port[16];
     int interactive_mode;
     int benchmark_mode;
+    int server_mode;
+    int thread_count;
+    int queue_size;
+    FILE *output;
 } AppConfig;
 
 /* 사용자에게 보여 줄 오류 메시지와 선택적 위치 정보입니다. */
@@ -186,9 +192,13 @@ typedef struct {
 /* app.c — 인자 파싱, SQL 파일 읽기, 실행 진입 */
 int parse_arguments(int argc, char **argv, AppConfig *config);
 int load_sql_file(const char *path, char *buffer, size_t buffer_size, ErrorInfo *error);
+int run_sql_text(const AppConfig *config, const char *sql_text, ErrorInfo *error);
 int run_sql_file(const AppConfig *config, const char *path, ErrorInfo *error);
 int run_program(const AppConfig *config);
 void print_error(const ErrorInfo *error);
+
+/* server.c — HTTP API 서버, RIO, thread pool */
+int run_server(const AppConfig *config, ErrorInfo *error);
 
 /* benchmark.c — 벤치마크 준비, 실행, 결과 출력 */
 int run_benchmark_mode(const AppConfig *config, ErrorInfo *error);

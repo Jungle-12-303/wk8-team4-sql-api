@@ -26,6 +26,15 @@ typedef struct {
 
 static TableRuntimeState table_states[EXECUTOR_MAX_TABLE_STATES];
 
+static FILE *executor_output_stream(const AppConfig *config)
+{
+    if (config != NULL && config->output != NULL) {
+        return config->output;
+    }
+
+    return stdout;
+}
+
 static void set_runtime_error(ErrorInfo *error,
                               const char *message,
                               SourceLocation location)
@@ -582,9 +591,10 @@ static int execute_select_with_index(const AppConfig *config,
         return 0;
     }
 
-    printf("[INDEX] WHERE %s = %s\n",
-           statement->where_column,
-           statement->where_value.text);
+    fprintf(executor_output_stream(config),
+            "[INDEX] WHERE %s = %s\n",
+            statement->where_column,
+            statement->where_value.text);
 
     if (!bptree_search(table_states[state_index].pk_index, target_id, &row_offset)) {
         row_offset = -1;
@@ -689,11 +699,12 @@ static int execute_select_with_index_range(const AppConfig *config,
         return 0;
     }
 
-    printf("[INDEX-RANGE] WHERE %s %s %s (%d rows)\n",
-           statement->where_column,
-           where_operator_text(statement->where_operator),
-           statement->where_value.text,
-           offsets.count);
+    fprintf(executor_output_stream(config),
+            "[INDEX-RANGE] WHERE %s %s %s (%d rows)\n",
+            statement->where_column,
+            where_operator_text(statement->where_operator),
+            statement->where_value.text,
+            offsets.count);
 
     ok = storage_print_rows_at_offsets(config,
                                        schema,
@@ -714,10 +725,11 @@ static int execute_select_with_scan(const AppConfig *config,
                                     int where_column_index,
                                     ErrorInfo *error)
 {
-    printf("[SCAN] WHERE %s %s %s\n",
-           statement->where_column,
-           where_operator_text(statement->where_operator),
-           statement->where_value.text);
+    fprintf(executor_output_stream(config),
+            "[SCAN] WHERE %s %s %s\n",
+            statement->where_column,
+            where_operator_text(statement->where_operator),
+            statement->where_value.text);
 
     return storage_print_rows_where_equals(config,
                                            schema,
@@ -765,8 +777,9 @@ static int execute_select(const AppConfig *config,
         result = storage_print_rows(config, &schema, selected_indices, selected_count, error);
         end_time = clock();
         if (result) {
-            printf("elapsed: %.3f ms\n",
-                   ((double)(end_time - start_time) * 1000.0) / (double)CLOCKS_PER_SEC);
+            fprintf(executor_output_stream(config),
+                    "elapsed: %.3f ms\n",
+                    ((double)(end_time - start_time) * 1000.0) / (double)CLOCKS_PER_SEC);
         }
         return result;
     }
@@ -801,7 +814,9 @@ static int execute_select(const AppConfig *config,
                                            error);
         end_time = clock();
         if (result) {
-            printf("elapsed: %.3f ms\n", elapsed_ms(start_time, end_time));
+            fprintf(executor_output_stream(config),
+                    "elapsed: %.3f ms\n",
+                    elapsed_ms(start_time, end_time));
         }
         return result;
     }
@@ -815,7 +830,9 @@ static int execute_select(const AppConfig *config,
                                                  error);
         end_time = clock();
         if (result) {
-            printf("elapsed: %.3f ms\n", elapsed_ms(start_time, end_time));
+            fprintf(executor_output_stream(config),
+                    "elapsed: %.3f ms\n",
+                    elapsed_ms(start_time, end_time));
         }
         return result;
     }
@@ -829,7 +846,9 @@ static int execute_select(const AppConfig *config,
                                       error);
     end_time = clock();
     if (result) {
-        printf("elapsed: %.3f ms\n", elapsed_ms(start_time, end_time));
+        fprintf(executor_output_stream(config),
+                "elapsed: %.3f ms\n",
+                elapsed_ms(start_time, end_time));
     }
     return result;
 }

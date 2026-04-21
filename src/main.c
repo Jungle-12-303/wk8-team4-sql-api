@@ -18,13 +18,19 @@
  * - -b 또는 --benchmark:
  *   벤치마크 더미 데이터를 만들고 PK / non-PK 조회 시간을 비교한 뒤
  *   interactive 모드로 이어집니다.
+ *
+ * - --server --port <port>:
+ *   HTTP API 서버를 실행합니다. POST /query로 SQL을 받고,
+ *   GET /health로 상태를 확인합니다.
  */
 static void print_usage(void)
 {
     fprintf(stderr,
             "usage: ./sqlproc --schema-dir <dir> --data-dir <dir> <input.sql>\n"
             "       ./sqlproc --schema-dir <dir> --data-dir <dir> --interactive\n"
-            "       ./sqlproc --schema-dir <dir> --data-dir <dir> --benchmark\n");
+            "       ./sqlproc --schema-dir <dir> --data-dir <dir> --benchmark\n"
+            "       ./sqlproc --schema-dir <dir> --data-dir <dir> --server "
+            "--port <port> [--threads <n>] [--queue-size <n>]\n");
 }
 
 int main(int argc, char **argv)

@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -std=c99 -Wall -Wextra -Werror -Iinclude
+CFLAGS = -std=c99 -Wall -Wextra -Werror -pthread -Iinclude
 TEST_CFLAGS = $(CFLAGS) -Wno-format-truncation
 BUILD_DIR = build
 SRC_DIR = src
@@ -24,8 +24,10 @@ TEST_APP = $(BUILD_DIR)/test_runner
 BENCH_INDEX = $(BUILD_DIR)/bench_index
 RECORDS ?= 1000000
 DATA_PATH ?= demo-data/users.csv
+BENCH_SCHEMA_DIR ?= ./examples/schemas
+BENCH_DATA_DIR ?= ./demo-data
 
-.PHONY: all test bench seed-demo-data clean
+.PHONY: all test api-test bench seed-demo-data clean
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -50,11 +52,14 @@ $(BUILD_DIR)/bench_index.o: $(BENCH_DIR)/bench_index.c $(HEADERS) | $(BUILD_DIR)
 test: $(TEST_APP)
 	./$(TEST_APP)
 
+api-test: $(APP)
+	./tests/api_server_test.sh
+
 $(BENCH_INDEX): $(BUILD_DIR)/bptree.o $(BENCH_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $(BUILD_DIR)/bptree.o $(BENCH_OBJS)
 
 bench: $(APP)
-	./$(APP) --schema-dir ./examples/schemas --data-dir ./demo-data --benchmark
+	./$(APP) --schema-dir $(BENCH_SCHEMA_DIR) --data-dir $(BENCH_DATA_DIR) --benchmark
 
 seed-demo-data: $(BENCH_INDEX)
 	mkdir -p demo-data

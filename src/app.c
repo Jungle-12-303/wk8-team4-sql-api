@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "sqlproc.h"
@@ -12,13 +13,33 @@
  * 즉 main.c와 실제 SQL 엔진 사이를 연결하는 중간 계층입니다.
  */
 
-static int run_sql_text(const AppConfig *config, const char *sql_text, ErrorInfo *error);
+#define DEFAULT_SERVER_THREADS 4
+#define DEFAULT_SERVER_QUEUE_SIZE 16
+
+static int parse_positive_int_option(const char *text, int min_value, int max_value, int *out_value)
+{
+    char *end_ptr;
+    long parsed_value;
+
+    parsed_value = strtol(text, &end_ptr, 10);
+    if (text[0] == '\0' || *end_ptr != '\0') {
+        return 0;
+    }
+
+    if (parsed_value < min_value || parsed_value > max_value) {
+        return 0;
+    }
+
+    *out_value = (int)parsed_value;
+    return 1;
+}
 
 int parse_arguments(int argc, char **argv, AppConfig *config)
 {
     int i;
     int has_input_path;
     int mode_count;
+    int has_server_only_option;
 
     /*
      * 이전 실행 값이 남지 않도록 config 전체를 0으로 초기화합니다.
@@ -26,12 +47,16 @@ int parse_arguments(int argc, char **argv, AppConfig *config)
     memset(config, 0, sizeof(*config));
     has_input_path = 0;
     mode_count = 0;
+    has_server_only_option = 0;
+    config->thread_count = DEFAULT_SERVER_THREADS;
+    config->queue_size = DEFAULT_SERVER_QUEUE_SIZE;
 
     /*
      * 지원하는 실행 형식:
      *   ./sqlproc --schema-dir <dir> --data-dir <dir> <input.sql>
      *   ./sqlproc --schema-dir <dir> --data-dir <dir> --interactive
      *   ./sqlproc --schema-dir <dir> --data-dir <dir> --benchmark
+     *   ./sqlproc --schema-dir <dir> --data-dir <dir> --server --port <port>
      *
      * 옵션 순서가 조금 달라도 읽을 수 있도록 argv 전체를 왼쪽부터 검사합니다.
      */
@@ -57,6 +82,37 @@ int parse_arguments(int argc, char **argv, AppConfig *config)
                    strcmp(argv[i], "--benchmark") == 0) {
             config->benchmark_mode = 1;
             mode_count += 1;
+        } else if (strcmp(argv[i], "--server") == 0) {
+            config->server_mode = 1;
+            mode_count += 1;
+        } else if (strcmp(argv[i], "--port") == 0) {
+            int parsed_port;
+
+            if (i + 1 >= argc ||
+                !parse_positive_int_option(argv[i + 1], 1, 65535, &parsed_port)) {
+                return 0;
+            }
+
+            (void)parsed_port;
+            snprintf(config->port, sizeof(config->port), "%s", argv[i + 1]);
+            i += 1;
+            has_server_only_option = 1;
+        } else if (strcmp(argv[i], "--threads") == 0) {
+            if (i + 1 >= argc ||
+                !parse_positive_int_option(argv[i + 1], 1, 128, &config->thread_count)) {
+                return 0;
+            }
+
+            i += 1;
+            has_server_only_option = 1;
+        } else if (strcmp(argv[i], "--queue-size") == 0) {
+            if (i + 1 >= argc ||
+                !parse_positive_int_option(argv[i + 1], 1, 1024, &config->queue_size)) {
+                return 0;
+            }
+
+            i += 1;
+            has_server_only_option = 1;
         } else if (argv[i][0] == '-') {
             return 0;
         } else {
@@ -77,6 +133,14 @@ int parse_arguments(int argc, char **argv, AppConfig *config)
     }
 
     if (mode_count > 1) {
+        return 0;
+    }
+
+    if (has_server_only_option && !config->server_mode) {
+        return 0;
+    }
+
+    if (config->server_mode && config->port[0] == '\0') {
         return 0;
     }
 
@@ -167,7 +231,7 @@ void print_error(const ErrorInfo *error)
     fprintf(stderr, "오류: %s\n", error->message);
 }
 
-static int run_sql_text(const AppConfig *config, const char *sql_text, ErrorInfo *error)
+int run_sql_text(const AppConfig *config, const char *sql_text, ErrorInfo *error)
 {
     TokenList tokens;
     SqlProgram program;
@@ -258,6 +322,15 @@ int run_sql_file(const AppConfig *config, const char *path, ErrorInfo *error)
 int run_program(const AppConfig *config)
 {
     ErrorInfo error;
+
+    if (config->server_mode) {
+        if (!run_server(config, &error)) {
+            print_error(&error);
+            return 1;
+        }
+
+        return 0;
+    }
 
     if (config->benchmark_mode) {
         if (!run_benchmark_mode(config, &error)) {

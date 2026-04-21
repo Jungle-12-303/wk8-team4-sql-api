@@ -33,6 +33,15 @@ static void build_table_path(char *dest,
     snprintf(dest, dest_size, "%s/%s%s", base_dir, table_name, extension);
 }
 
+static FILE *storage_output_stream(const AppConfig *config)
+{
+    if (config != NULL && config->output != NULL) {
+        return config->output;
+    }
+
+    return stdout;
+}
+
 static int validate_line_length(const char *line,
                                 size_t line_size,
                                 FILE *file,
@@ -326,7 +335,8 @@ static int ensure_data_file(const AppConfig *config,
     return 1;
 }
 
-static void print_selected_header(const TableSchema *schema,
+static void print_selected_header(FILE *output,
+                                  const TableSchema *schema,
                                   const int selected_indices[SQLPROC_MAX_COLUMNS],
                                   int selected_count)
 {
@@ -335,13 +345,13 @@ static void print_selected_header(const TableSchema *schema,
     /* 출력 결과 첫 줄에 선택된 컬럼 이름들을 탭 구분으로 출력합니다. */
     for (i = 0; i < selected_count; i++) {
         if (i > 0) {
-            fputc('\t', stdout);
+            fputc('\t', output);
         }
 
-        fputs(schema->columns[selected_indices[i]].name, stdout);
+        fputs(schema->columns[selected_indices[i]].name, output);
     }
 
-    fputc('\n', stdout);
+    fputc('\n', output);
 }
 
 int storage_append_row(const AppConfig *config,
@@ -403,16 +413,18 @@ int storage_print_rows(const AppConfig *config,
     char line[STORAGE_MAX_ROW_LEN];
     char values[SQLPROC_MAX_COLUMNS][SQLPROC_MAX_VALUE_LEN];
     FILE *file;
+    FILE *output;
 
     /*
      * SELECT는 파일이 없으면 헤더만 출력하고,
      * 파일이 있으면 헤더를 검증한 뒤 전체 행을 순차 출력합니다.
      */
+    output = storage_output_stream(config);
     build_table_path(path, sizeof(path), config->data_dir, schema->table_name, ".csv");
     file = fopen(path, "rb");
     if (file == NULL) {
         if (errno == ENOENT) {
-            print_selected_header(schema, selected_indices, selected_count);
+            print_selected_header(output, schema, selected_indices, selected_count);
             return 1;
         }
 
@@ -455,7 +467,7 @@ int storage_print_rows(const AppConfig *config,
         }
     }
 
-    print_selected_header(schema, selected_indices, selected_count);
+    print_selected_header(output, schema, selected_indices, selected_count);
 
     while (fgets(line, sizeof(line), file) != NULL) {
         int value_count;
@@ -482,13 +494,13 @@ int storage_print_rows(const AppConfig *config,
 
         for (i = 0; i < selected_count; i++) {
             if (i > 0) {
-                fputc('\t', stdout);
+                fputc('\t', output);
             }
 
-            fputs(values[selected_indices[i]], stdout);
+            fputs(values[selected_indices[i]], output);
         }
 
-        fputc('\n', stdout);
+        fputc('\n', output);
     }
 
     fclose(file);
@@ -506,6 +518,7 @@ int storage_print_row_at_offset(const AppConfig *config,
     char line[STORAGE_MAX_ROW_LEN];
     char values[SQLPROC_MAX_COLUMNS][SQLPROC_MAX_VALUE_LEN];
     FILE *file;
+    FILE *output;
     int value_count;
     int i;
 
@@ -514,7 +527,8 @@ int storage_print_row_at_offset(const AppConfig *config,
      * 필요한 한 줄만 읽습니다. offset이 음수이면 결과가 없는 조회로 보고
      * 헤더만 출력합니다.
      */
-    print_selected_header(schema, selected_indices, selected_count);
+    output = storage_output_stream(config);
+    print_selected_header(output, schema, selected_indices, selected_count);
     if (offset < 0) {
         return 1;
     }
@@ -590,12 +604,12 @@ int storage_print_row_at_offset(const AppConfig *config,
 
     for (i = 0; i < selected_count; i++) {
         if (i > 0) {
-            fputc('\t', stdout);
+            fputc('\t', output);
         }
 
-        fputs(values[selected_indices[i]], stdout);
+        fputs(values[selected_indices[i]], output);
     }
-    fputc('\n', stdout);
+    fputc('\n', output);
 
     fclose(file);
     return 1;
@@ -684,16 +698,18 @@ int storage_print_rows_where_equals(const AppConfig *config,
     char path[STORAGE_MAX_PATH_LEN];
     char line[STORAGE_MAX_ROW_LEN];
     FILE *file;
+    FILE *output;
 
     /*
      * PK가 아닌 WHERE 조건은 별도 인덱스가 없으므로 CSV를 처음부터 끝까지
      * 선형 탐색합니다.
      */
+    output = storage_output_stream(config);
     build_table_path(path, sizeof(path), config->data_dir, schema->table_name, ".csv");
     file = fopen(path, "rb");
     if (file == NULL) {
         if (errno == ENOENT) {
-            print_selected_header(schema, selected_indices, selected_count);
+            print_selected_header(output, schema, selected_indices, selected_count);
             return 1;
         }
 
@@ -703,7 +719,7 @@ int storage_print_rows_where_equals(const AppConfig *config,
 
     if (fgets(line, sizeof(line), file) == NULL) {
         fclose(file);
-        print_selected_header(schema, selected_indices, selected_count);
+        print_selected_header(output, schema, selected_indices, selected_count);
         return 1;
     }
 
@@ -733,7 +749,7 @@ int storage_print_rows_where_equals(const AppConfig *config,
         }
     }
 
-    print_selected_header(schema, selected_indices, selected_count);
+    print_selected_header(output, schema, selected_indices, selected_count);
 
     while (fgets(line, sizeof(line), file) != NULL) {
         char values[SQLPROC_MAX_COLUMNS][SQLPROC_MAX_VALUE_LEN];
@@ -776,12 +792,12 @@ int storage_print_rows_where_equals(const AppConfig *config,
 
         for (i = 0; i < selected_count; i++) {
             if (i > 0) {
-                fputc('\t', stdout);
+                fputc('\t', output);
             }
 
-            fputs(values[selected_indices[i]], stdout);
+            fputs(values[selected_indices[i]], output);
         }
-        fputc('\n', stdout);
+        fputc('\n', output);
     }
 
     fclose(file);
@@ -789,6 +805,7 @@ int storage_print_rows_where_equals(const AppConfig *config,
 }
 
 static int print_row_from_open_file(FILE *file,
+                                    FILE *output,
                                     const TableSchema *schema,
                                     long offset,
                                     const int selected_indices[SQLPROC_MAX_COLUMNS],
@@ -827,12 +844,12 @@ static int print_row_from_open_file(FILE *file,
 
     for (i = 0; i < selected_count; i++) {
         if (i > 0) {
-            fputc('\t', stdout);
+            fputc('\t', output);
         }
 
-        fputs(values[selected_indices[i]], stdout);
+        fputs(values[selected_indices[i]], output);
     }
-    fputc('\n', stdout);
+    fputc('\n', output);
 
     return 1;
 }
@@ -848,9 +865,11 @@ int storage_print_rows_at_offsets(const AppConfig *config,
     char path[STORAGE_MAX_PATH_LEN];
     char line[STORAGE_MAX_ROW_LEN];
     FILE *file;
+    FILE *output;
     int i;
 
-    print_selected_header(schema, selected_indices, selected_count);
+    output = storage_output_stream(config);
+    print_selected_header(output, schema, selected_indices, selected_count);
     if (offset_count == 0) {
         return 1;
     }
@@ -896,6 +915,7 @@ int storage_print_rows_at_offsets(const AppConfig *config,
 
     for (i = 0; i < offset_count; i++) {
         if (!print_row_from_open_file(file,
+                                      output,
                                       schema,
                                       offsets[i],
                                       selected_indices,
