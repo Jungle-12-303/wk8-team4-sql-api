@@ -369,16 +369,16 @@ static int parse_content_length(const char *line, long *content_length)
     return 1;
 }
 
-static int write_response_header(int connfd,
-                                 int status_code,
-                                 const char *reason,
-                                 long content_length)
+static int format_response_header(char *dest,
+                                  size_t dest_size,
+                                  int status_code,
+                                  const char *reason,
+                                  long content_length)
 {
-    char header[HTTP_HEADER_MAX];
     int header_length;
 
-    header_length = snprintf(header,
-                             sizeof(header),
+    header_length = snprintf(dest,
+                             dest_size,
                              "HTTP/1.0 %d %s\r\n"
                              "Server: sqlproc\r\n"
                              "Content-Type: text/plain; charset=utf-8\r\n"
@@ -388,7 +388,27 @@ static int write_response_header(int connfd,
                              status_code,
                              reason,
                              content_length);
-    if (header_length < 0 || (size_t)header_length >= sizeof(header)) {
+    if (header_length < 0 || (size_t)header_length >= dest_size) {
+        return 0;
+    }
+
+    return header_length;
+}
+
+static int write_response_header(int connfd,
+                                 int status_code,
+                                 const char *reason,
+                                 long content_length)
+{
+    char header[HTTP_HEADER_MAX];
+    int header_length;
+
+    header_length = format_response_header(header,
+                                           sizeof(header),
+                                           status_code,
+                                           reason,
+                                           content_length);
+    if (header_length <= 0) {
         return 0;
     }
 
@@ -715,3 +735,47 @@ int run_server(const AppConfig *config, ErrorInfo *error)
         connection_queue_insert(&queue, connfd);
     }
 }
+
+#ifdef SQLPROC_TEST
+static void connection_queue_destroy(ConnectionQueue *queue)
+{
+    pthread_mutex_destroy(&queue->mutex);
+    pthread_cond_destroy(&queue->slots);
+    pthread_cond_destroy(&queue->items);
+    free(queue->buf);
+    queue->buf = NULL;
+}
+
+int sqlproc_test_parse_content_length(const char *line, long *content_length)
+{
+    return parse_content_length(line, content_length);
+}
+
+int sqlproc_test_format_response_header(char *dest,
+                                        size_t dest_size,
+                                        int status_code,
+                                        const char *reason,
+                                        long content_length)
+{
+    return format_response_header(dest, dest_size, status_code, reason, content_length);
+}
+
+int sqlproc_test_connection_queue_round_trip(void)
+{
+    ConnectionQueue queue;
+    int first;
+    int second;
+
+    if (!connection_queue_init(&queue, 2)) {
+        return 0;
+    }
+
+    connection_queue_insert(&queue, 11);
+    connection_queue_insert(&queue, 22);
+    first = connection_queue_remove(&queue);
+    second = connection_queue_remove(&queue);
+    connection_queue_destroy(&queue);
+
+    return first == 11 && second == 22;
+}
+#endif

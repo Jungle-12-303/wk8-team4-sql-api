@@ -204,6 +204,60 @@ static int test_parse_arguments_reject_server_mixed_modes(void)
     return !parse_arguments(9, argv, &config);
 }
 
+static int test_parse_arguments_reject_invalid_server_values(void)
+{
+    AppConfig config;
+    char *bad_port_zero[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server",
+        "--port", "0"
+    };
+    char *bad_port_text[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server",
+        "--port", "abc"
+    };
+    char *bad_thread_count[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server",
+        "--port", "18080",
+        "--threads", "0"
+    };
+    char *bad_queue_size[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--server",
+        "--port", "18080",
+        "--queue-size", "0"
+    };
+
+    return !parse_arguments(8, bad_port_zero, &config) &&
+           !parse_arguments(8, bad_port_text, &config) &&
+           !parse_arguments(10, bad_thread_count, &config) &&
+           !parse_arguments(10, bad_queue_size, &config);
+}
+
+static int test_parse_arguments_reject_server_options_without_server(void)
+{
+    AppConfig config;
+    char *argv[] = {
+        "sqlproc",
+        "--schema-dir", "schemas",
+        "--data-dir", "data",
+        "--threads", "2",
+        "input.sql"
+    };
+
+    return !parse_arguments(8, argv, &config);
+}
+
 static int test_parse_arguments_reject_mixed_modes(void)
 {
     AppConfig config;
@@ -216,6 +270,70 @@ static int test_parse_arguments_reject_mixed_modes(void)
     };
 
     return !parse_arguments(7, argv, &config);
+}
+
+static int test_http_content_length_parser(void)
+{
+    long content_length;
+
+    content_length = 0;
+    if (!sqlproc_test_parse_content_length("Content-Length: 123\r\n", &content_length) ||
+        content_length != 123) {
+        return 0;
+    }
+
+    content_length = 0;
+    if (!sqlproc_test_parse_content_length("Content-Length:\t5\n", &content_length) ||
+        content_length != 5) {
+        return 0;
+    }
+
+    if (sqlproc_test_parse_content_length("Content-Length: abc\r\n", &content_length)) {
+        return 0;
+    }
+
+    if (sqlproc_test_parse_content_length("Content-Length: -1\r\n", &content_length)) {
+        return 0;
+    }
+
+    return !sqlproc_test_parse_content_length("Content-Length: 10x\r\n", &content_length);
+}
+
+static int test_http_response_header_builder(void)
+{
+    char header[256];
+    char too_small[8];
+
+    if (!sqlproc_test_format_response_header(header,
+                                             sizeof(header),
+                                             500,
+                                             "Internal Server Error",
+                                             12)) {
+        return 0;
+    }
+
+    if (strstr(header, "HTTP/1.0 500 Internal Server Error\r\n") == NULL) {
+        return 0;
+    }
+
+    if (strstr(header, "Content-Type: text/plain; charset=utf-8\r\n") == NULL) {
+        return 0;
+    }
+
+    if (strstr(header, "Content-Length: 12\r\n") == NULL) {
+        return 0;
+    }
+
+    return !sqlproc_test_format_response_header(too_small,
+                                                sizeof(too_small),
+                                                200,
+                                                "OK",
+                                                2);
+}
+
+static int test_connection_queue_round_trip(void)
+{
+    return sqlproc_test_connection_queue_round_trip();
 }
 
 static int test_tokenize_select(void)
@@ -2030,8 +2148,33 @@ int main(void)
         return 1;
     }
 
+    if (!test_parse_arguments_reject_invalid_server_values()) {
+        fprintf(stderr, "test_parse_arguments_reject_invalid_server_values failed\n");
+        return 1;
+    }
+
+    if (!test_parse_arguments_reject_server_options_without_server()) {
+        fprintf(stderr, "test_parse_arguments_reject_server_options_without_server failed\n");
+        return 1;
+    }
+
     if (!test_parse_arguments_reject_mixed_modes()) {
         fprintf(stderr, "test_parse_arguments_reject_mixed_modes failed\n");
+        return 1;
+    }
+
+    if (!test_http_content_length_parser()) {
+        fprintf(stderr, "test_http_content_length_parser failed\n");
+        return 1;
+    }
+
+    if (!test_http_response_header_builder()) {
+        fprintf(stderr, "test_http_response_header_builder failed\n");
+        return 1;
+    }
+
+    if (!test_connection_queue_round_trip()) {
+        fprintf(stderr, "test_connection_queue_round_trip failed\n");
         return 1;
     }
 

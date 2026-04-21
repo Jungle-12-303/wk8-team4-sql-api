@@ -68,6 +68,17 @@ grep -q '\[INDEX\] WHERE id = 1' "$BASE_DIR/select.txt"
 grep -q 'id	name	age' "$BASE_DIR/select.txt"
 grep -q '1	kim	20' "$BASE_DIR/select.txt"
 
+multiline_sql=$(printf "INSERT INTO users (name, age) VALUES ('min', 25);\nSELECT name FROM users WHERE id = 2;")
+multiline_response=$(curl -sS \
+    -X POST \
+    --data-binary "$multiline_sql" \
+    "http://127.0.0.1:$PORT/query")
+
+printf '%s\n' "$multiline_response" > "$BASE_DIR/multiline.txt"
+grep -q '\[INDEX\] WHERE id = 2' "$BASE_DIR/multiline.txt"
+grep -q 'name' "$BASE_DIR/multiline.txt"
+grep -q 'min' "$BASE_DIR/multiline.txt"
+
 not_found_status=$(curl -sS -o "$BASE_DIR/not-found.txt" -w '%{http_code}' \
     "http://127.0.0.1:$PORT/missing")
 if [ "$not_found_status" != "404" ]; then
@@ -91,6 +102,14 @@ if [ "$empty_status" != "400" ]; then
     exit 1
 fi
 
+missing_length_status=$(printf 'POST /query HTTP/1.0\r\n\r\nSELECT * FROM users;' |
+    nc 127.0.0.1 "$PORT" |
+    awk 'NR == 1 { print $2 }')
+if [ "$missing_length_status" != "400" ]; then
+    echo "expected 400 for missing Content-Length, got $missing_length_status"
+    exit 1
+fi
+
 invalid_length_status=$(printf 'POST /query HTTP/1.0\r\nContent-Length: abc\r\n\r\n' |
     nc 127.0.0.1 "$PORT" |
     awk 'NR == 1 { print $2 }')
@@ -108,6 +127,16 @@ if [ "$large_status" != "413" ]; then
     echo "expected 413, got $large_status"
     exit 1
 fi
+
+sql_error_status=$(curl -sS -o "$BASE_DIR/sql-error.txt" -w '%{http_code}' \
+    -X POST \
+    --data-binary "SELECT * FROM users WHERE missing = 1;" \
+    "http://127.0.0.1:$PORT/query")
+if [ "$sql_error_status" != "400" ]; then
+    echo "expected 400 for SQL error, got $sql_error_status"
+    exit 1
+fi
+grep -q '오류:' "$BASE_DIR/sql-error.txt"
 
 parallel_pids=""
 for name in lee park choi jung; do
@@ -129,6 +158,7 @@ all_response=$(curl -sS \
 
 printf '%s\n' "$all_response" > "$BASE_DIR/all.txt"
 grep -q 'kim' "$BASE_DIR/all.txt"
+grep -q 'min' "$BASE_DIR/all.txt"
 grep -q 'lee' "$BASE_DIR/all.txt"
 grep -q 'park' "$BASE_DIR/all.txt"
 grep -q 'choi' "$BASE_DIR/all.txt"

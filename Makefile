@@ -1,6 +1,6 @@
 CC = cc
 CFLAGS = -std=c99 -Wall -Wextra -Werror -pthread -Iinclude
-TEST_CFLAGS = $(CFLAGS) -Wno-format-truncation
+TEST_CFLAGS = $(CFLAGS) -DSQLPROC_TEST -Wno-format-truncation
 BUILD_DIR = build
 SRC_DIR = src
 TEST_DIR = tests
@@ -16,6 +16,7 @@ CORE_SRCS = $(filter-out $(SRC_DIR)/main.c, $(APP_SRCS))
 
 APP_OBJS = $(APP_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 CORE_OBJS = $(CORE_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+TEST_CORE_OBJS = $(CORE_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/test_%.o)
 TEST_OBJS = $(BUILD_DIR)/test_runner.o
 BENCH_OBJS = $(BUILD_DIR)/bench_index.o
 
@@ -37,11 +38,14 @@ all: $(APP)
 $(APP): $(APP_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $(APP_OBJS)
 
-$(TEST_APP): $(CORE_OBJS) $(TEST_OBJS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $(CORE_OBJS) $(TEST_OBJS)
+$(TEST_APP): $(TEST_CORE_OBJS) $(TEST_OBJS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $(TEST_CORE_OBJS) $(TEST_OBJS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/test_%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/test_runner.o: $(TEST_DIR)/test_runner.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(TEST_CFLAGS) -c $< -o $@

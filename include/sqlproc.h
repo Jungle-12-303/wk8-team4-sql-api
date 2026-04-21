@@ -200,6 +200,16 @@ void print_error(const ErrorInfo *error);
 /* server.c — HTTP API 서버, RIO, thread pool */
 int run_server(const AppConfig *config, ErrorInfo *error);
 
+#ifdef SQLPROC_TEST
+int sqlproc_test_parse_content_length(const char *line, long *content_length);
+int sqlproc_test_format_response_header(char *dest,
+                                        size_t dest_size,
+                                        int status_code,
+                                        const char *reason,
+                                        long content_length);
+int sqlproc_test_connection_queue_round_trip(void);
+#endif
+
 /* benchmark.c — 벤치마크 준비, 실행, 결과 출력 */
 int run_benchmark_mode(const AppConfig *config, ErrorInfo *error);
 
