@@ -91,6 +91,45 @@ SQL string (HTTP body)
 
 lock 획득에는 `timedrdlock` / `timedwrlock`을 사용합니다. timeout(`--lock-timeout-ms`) 내에 lock을 얻지 못하면 SQL 실행 없이 `503 lock_timeout`을 반환합니다.
 
+## 주요 함수 목록
+
+### DB 엔진 레이어 (`src/core/`)
+
+| 함수 | 파일 | 책임 |
+|---|---|---|
+| `sql_execute(Table *, sql)` | `sql.c` | SQL 문자열을 파싱하고 실행하여 `SQLResult` 반환 |
+| `sql_result_destroy(result)` | `sql.c` | `SQLResult` 내부 heap 메모리 해제 |
+| `table_create()` | `table.c` | in-memory `users` 테이블과 B+Tree index 초기화 |
+| `table_destroy(table)` | `table.c` | 테이블 및 소유한 레코드, index 전체 해제 |
+| `table_insert(table, name, age)` | `table.c` | 레코드 삽입 + auto-increment id 부여 + B+Tree index 갱신 |
+| `table_find_by_id(table, id)` | `table.c` | B+Tree index로 id 단건 조회 |
+| `table_find_by_id_condition(table, cmp, id, ...)` | `table.c` | id 범위 조건(`=`, `<`, `<=`, `>`, `>=`) 복수 조회 (B+Tree) |
+| `table_find_by_name_matches(table, name, ...)` | `table.c` | name `=` 조건 복수 조회 (linear scan) |
+| `table_find_by_age_condition(table, cmp, age, ...)` | `table.c` | age 범위 조건 복수 조회 (linear scan) |
+| `table_collect_all(table, ...)` | `table.c` | 전체 레코드 포인터 배열로 수집 |
+| `bptree_create()` | `bptree.c` | 빈 B+Tree 생성 |
+| `bptree_destroy(tree)` | `bptree.c` | 트리 노드 전체 해제 (레코드 포인터는 해제하지 않음) |
+| `bptree_insert(tree, key, value)` | `bptree.c` | key/value 삽입, 노드 분할 처리 |
+| `bptree_search(tree, key)` | `bptree.c` | key로 value 포인터 탐색, 없으면 `NULL` |
+
+### API 서버 레이어 (`src/server/`)
+
+| 함수 | 파일 | 책임 |
+|---|---|---|
+| `db_server_init(server)` | `db_server.c` | `DBServer` 초기화 (rwlock, mutex, table 생성) |
+| `db_server_init_with_config(server, config)` | `db_server.c` | 설정(timeout, 지연)을 지정해 초기화 |
+| `db_server_destroy(server)` | `db_server.c` | table, lock, mutex 전체 해제 |
+| `db_server_execute(server, query, execution)` | `db_server.c` | **경계 함수** — SQL 분류 → lock 획득 → `sql_execute()` → metrics 기록 |
+| `db_server_get_metrics(server, metrics)` | `db_server.c` | 현재 metrics 스냅샷을 thread-safe하게 읽기 |
+| `db_server_record_queue_full(server)` | `db_server.c` | queue 포화 이벤트를 metrics에 기록 |
+| `api_parse_http_request(raw, request, ...)` | `api.c` | HTTP raw text → `APIRequest` 역직렬화 |
+| `api_build_health_response(response)` | `api.c` | `/health` JSON 응답 바디 생성 |
+| `api_build_metrics_response(metrics, response)` | `api.c` | `/metrics` JSON 응답 바디 생성 |
+| `api_build_execution_response(execution, response)` | `api.c` | `DBServerExecution` → INSERT/SELECT JSON 응답 생성 |
+| `api_build_error_response(response, code, ...)` | `api.c` | 오류 JSON 응답 생성 (`400`/`404`/`405`/`500`/`503`) |
+| `api_render_http_response(response, raw)` | `api.c` | `APIResponse` → HTTP status line + header + body 직렬화 |
+| `http_server_run(options)` | `http_server.c` | listen socket 생성, accept loop 시작, worker thread pool 실행 |
+
 ## 멀티 스레드 동시성 이슈
 
 N개의 worker가 하나의 `Table *`를 동시에 읽고 쓰면 data race가 발생합니다. 구체적인 위험은 다음 세 가지입니다.
