@@ -120,14 +120,51 @@ Supersedes: `office-hours-mini-dbms-api-server-2026-04-22-revised.md`
 8. 나중에 `UPDATE`나 `DELETE`가 생기면 기본값은 write lock 경로다.
 9. "lock-free SELECT"를 더 이상 주장하지 않는다. 이번 v1의 약속은 "read-safe parallel SELECT"다.
 
+## Four Fixed Contracts Before Coding
+
+### 1. 결과 포인터 수명과 unlock 시점은 고정한다
+
+- 현재 `SQLResult`는 `Record` 복사본이 아니라 table-owned `Record *`를 담는다.
+- 따라서 `SELECT` 요청은 `sql_execute()`가 끝났다고 바로 read lock을 풀지 않는다.
+- 서버는 응답 JSON 문자열을 끝까지 만든 뒤에만 read lock을 해제한다.
+- read lock을 풀어 놓고 나서 `result.records[index]->...`를 다시 읽는 코드는 금지한다.
+- shutdown 순서는 `accept 중단 -> queue 종료 -> worker drain/join -> Table destroy -> rwlock destroy`로 고정한다.
+- 직관적으로 말하면, 지금 구조는 "책 내용을 복사해 주는 구조"가 아니라 "책장 안의 책을 직접 펼쳐 보는 구조"에 가깝다. 응답에 필요한 내용을 다 써 내려가기 전에는 책장을 치우면 안 된다.
+
+### 2. timeout은 lock 시간만이 아니라 요청 전체 시간을 기준으로 본다
+
+- timeout budget은 요청이 서버에 받아들여져 queue에 들어가는 순간부터 시작한다.
+- queue 대기 시간, worker 대기 시간, DB lock 대기 시간은 모두 같은 timeout budget을 공유한다.
+- `queue_full`은 queue에 넣기 전에 거절된 경우에만 사용한다.
+- queue에서 꺼냈을 때 이미 budget이 소진되었으면, worker는 `sql_execute()`에 들어가지 않고 바로 `lock_timeout`을 반환한다.
+- rwlock 대기 중에 남은 budget이 소진되어도 같은 방식으로 `lock_timeout`을 반환한다.
+- 직관적으로 말하면, 사용자가 체감한 기다림은 "락 앞에서 기다린 시간"만이 아니라 "서버 안에서 줄 서 있던 전체 시간"이다. 이번 명세는 그 전체 시간을 한 번에 센다.
+
+### 3. lock 종류와 `usedIndex`는 같은 판단에서 나온다
+
+- 서버는 실행 전에 요청을 한 번만 분류하고, 그 결과로 lock 종류와 `usedIndex`를 함께 결정한다.
+- 이 분류는 `db_server_classify_query()` 같은 단일 함수에서 관리하고, API 핸들러의 ad-hoc 문자열 비교로 계산하지 않는다.
+- v1 기준으로 `WHERE id ...` 계열 조회는 index 경로로 보고 `usedIndex = true`로 기록한다.
+- `SELECT * FROM users`, `WHERE name = ...`, `WHERE age ...` 경로는 scan 경로로 보고 `usedIndex = false`로 기록한다.
+- `INSERT`는 write 경로로 분류하고 `usedIndex`는 응답 필드에서 생략하거나 `false`로 통일한다. 구현 중 하나를 선택하되 문서와 코드가 같은 규칙을 따라야 한다.
+- 직관적으로 말하면, "어떻게 실행했는지"와 "무슨 경로를 썼다고 API가 말하는지"가 서로 다르면 안 된다. 실행 판단과 발표용 필드는 같은 스위치에서 나와야 한다.
+
+### 4. HTTP/JSON 계약은 구현 전에 고정한다
+
+- `POST /query` 요청 body는 `{"query":"SELECT * FROM users;"}` 형태로 고정한다.
+- `POST /query` 성공 응답은 항상 하나의 envelope를 사용한다. 예: `{"ok":true,"action":"select","usedIndex":false,"rowCount":0,"rows":[]}`
+- `INSERT` 성공 응답도 같은 envelope를 유지한다. 예: `{"ok":true,"action":"insert","insertedId":1}`
+- 빈 조회는 HTTP 200과 `ok: true`, `rowCount: 0`, `rows: []`로 반환한다.
+- 오류 응답도 envelope를 통일한다. 예: `{"ok":false,"error":{"type":"syntax_error","message":"..."}}`
+- `EXIT`와 `QUIT`는 REPL 전용 명령으로 취급하고, API 서버에서는 프로세스를 종료하지 않는다. 이 입력은 HTTP 400 계열 오류 응답으로 거절한다.
+- `GET /health`는 최소한 `{"ok":true,"status":"ok"}`를 반환하고, `GET /metrics`는 문서에 적힌 운영 지표만 JSON으로 노출한다.
+- 직관적으로 말하면, 같은 질문에는 항상 같은 모양의 답이 나와야 한다. 그래야 테스트, curl 예시, 발표 메시지, 실제 구현이 모두 같은 방향으로 정렬된다.
+
 ## Open Questions
 
 - 타깃 환경에서 `pthread_rwlock_t`와 관련 timed wait API를 어디까지 사용할 것인가?
-- write lock timeout은 기존 명세처럼 유지할 것인가, rwlock 기반에 맞게 정책을 다시 정의할 것인가?
-- JSON 직렬화는 read lock 해제 후 수행할 것인가? 현재 범위에서는 `Record`가 immutable이라고 보는 전제를 팀이 수용하는지 확인이 필요하다.
-- `usedIndex`는 정확히 어떤 규칙으로 계산할 것인가? 핸들러별 ad-hoc 문자열 비교는 피해야 한다.
 - malformed HTTP request의 판정 범위를 어디까지 둘 것인가? request line만 볼지, header/body framing까지 볼지 정해야 한다.
-- worker shutdown, client disconnect, partial write 같은 운영 edge case를 이번 범위에 넣을 것인가, 명시적 비범위로 둘 것인가?
+- client disconnect, partial write 같은 운영 edge case를 이번 범위에 넣을 것인가, 명시적 비범위로 둘 것인가?
 
 ## Success Criteria
 
@@ -172,3 +209,16 @@ Supersedes: `office-hours-mini-dbms-api-server-2026-04-22-revised.md`
 - 비범위를 공격적으로 잘라냈다. DDL, persistence, TLS, auth를 이번 단계에서 안 하겠다고 분명히 적은 건 설계 감각이다.
 - unsafe한 전제를 그냥 덮지 않고, 아예 동시성 규칙으로 끌어올려 고치려는 방향이 좋다. 이건 문제를 구현이 아니라 계약 차원에서 본다는 뜻이다.
 - 기능 목록보다 발표 흐름과 설명 가능성을 같이 설계하고 있다. 이건 학습 프로젝트에서 생각보다 큰 차이를 만든다.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | NOT RUN | 아직 실행하지 않음 |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | NOT RUN | 아직 실행하지 않음 |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 12 issues/gaps, 1 critical gap |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | NOT RUN | 백엔드 중심 계획이라 미실행 |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | NOT RUN | 아직 실행하지 않음 |
+
+- **UNRESOLVED:** `pthread_rwlock_t` timed API 전략, malformed HTTP 허용 범위, client disconnect/partial write 정책, `INSERT`의 `usedIndex` 응답 규칙은 구현 전에 더 못 박는 편이 좋다.
+- **VERDICT:** ENG REVIEW OPEN. 구현은 가능하지만, 위 결정들을 먼저 잠그고 시작해야 재작업이 줄어든다.
