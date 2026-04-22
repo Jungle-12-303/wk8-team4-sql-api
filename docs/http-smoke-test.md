@@ -28,7 +28,8 @@ mingw32-make server
 직접 컴파일도 가능합니다.
 
 ```bash
-gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -o server.exe server.c http_server.c db_server.c api.c platform.c bptree.c table.c sql.c -lws2_32
+mkdir -p build/bin
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Isrc/core -Isrc/server -o build/bin/server.exe src/server/server.c src/server/http_server.c src/server/db_server.c src/server/api.c src/server/platform.c src/core/bptree.c src/core/table.c src/core/sql.c -lws2_32
 ```
 
 ## 1차 smoke: 정상/에러/metrics
@@ -36,7 +37,7 @@ gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -o server.exe server.c http_ser
 아래 스크립트를 실행합니다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\server_http_smoke_test.ps1
+powershell -ExecutionPolicy Bypass -File .\tests\smoke\server_http_smoke_test.ps1
 ```
 
 스크립트 1단계에서는 아래를 확인합니다.
@@ -75,7 +76,7 @@ server HTTP smoke test passed.
 
 ## 실패할 때 먼저 볼 것
 
-### 1. `server.exe not found`
+### 1. `build\bin\server.exe not found`
 
 - 바이너리를 아직 빌드하지 않은 경우입니다.
 - `make server` 또는 직접 `gcc` 빌드를 먼저 실행합니다.
@@ -95,9 +96,9 @@ server HTTP smoke test passed.
 
 아래 순서로 한 번만 통과시키면 시연 안정성이 많이 올라갑니다.
 
-1. `unit_test` 통과
-2. `server_cli_smoke_test.ps1` 통과
-3. `server_http_smoke_test.ps1` 통과
+1. `build/bin/unit_test` 통과
+2. `tests/smoke/server_cli_smoke_test.ps1` 통과
+3. `tests/smoke/server_http_smoke_test.ps1` 통과
 4. `curl`로 `GET /health`, `GET /metrics`, `POST /query`를 직접 한 번 더 확인
 
 이 순서가 좋은 이유는, 엔진 회귀와 서버 회귀를 따로 보다가 마지막에 end-to-end를 한 번 더 확인할 수 있기 때문입니다.

@@ -1,9 +1,10 @@
 $ErrorActionPreference = "Stop"
 
-$serverPath = Join-Path $PSScriptRoot "server.exe"
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$serverPath = Join-Path $projectRoot "build\bin\server.exe"
 
 if (-not (Test-Path $serverPath)) {
-    throw "server.exe not found. Build the server target first."
+    throw "build\bin\server.exe not found. Build the server target first."
 }
 
 function Invoke-HttpJson {

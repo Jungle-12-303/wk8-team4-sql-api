@@ -29,17 +29,20 @@
 *.dylib
 
 # Executables
+build/
 *.exe
 *.out
 *.app
 *.i*86
 *.x86_64
 *.hex
-main
-perf_test
-condition_perf_test
-unit_test
-server
+/main
+/perf_test
+/condition_perf_test
+/unit_test
+/server
+/api_server
+/api_concurrency_test
 
 # Debug files
 *.dSYM/
