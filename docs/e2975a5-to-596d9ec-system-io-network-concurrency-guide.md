@@ -146,6 +146,20 @@ sequenceDiagram
     Main-->>User: printf로 결과 출력
 ```
 
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `SQL 한 줄 입력` | `fgets(input, sizeof(input), stdin)`로 터미널에서 SQL 한 줄을 읽는다. | `input`은 입력을 담을 문자 배열, `sizeof(input)`은 최대 읽기 크기, `stdin`은 표준 입력이다. |
+| `sql_execute(table, input)` | `src/core/sql.c`의 `sql_execute(Table *table, const char *input)` 호출이다. | `table`은 메모리 안의 users 테이블, `input`은 사용자가 입력한 SQL 문자열이다. |
+| `table_insert(name, age)` | 실제 호출은 `table_insert(table, name, age)`이다. `sql_execute_insert()`가 `INSERT` 문에서 이름과 나이를 파싱한 뒤 호출한다. | `table`은 저장 대상 테이블, `name`은 예를 들어 `"Alice"`, `age`는 예를 들어 `20`이다. |
+| `bptree_insert(id, record)` | 실제 호출은 `bptree_insert(table->pk_index, record->id, record)`이다. 새 row를 id 인덱스에도 넣는다. | `table->pk_index`는 기본키 B+Tree, `record->id`는 자동 증가 id, `record`는 저장한 `Record *` 포인터다. |
+| `table_find_by_id_condition()` | 실제 호출은 `table_find_by_id_condition(table, comparison, int_value, &result.records, &result.row_count)`이다. | `comparison`은 `=`, `>`, `>=` 같은 비교 연산, `int_value`는 WHERE의 id 값, `result.records`와 `result.row_count`는 찾은 row 목록과 개수다. |
+| `bptree_search(id)` | 실제 호출은 `bptree_search(table->pk_index, id)`이다. | `table->pk_index`에서 `id` key를 찾아 저장된 `Record *`를 돌려준다. |
+| `rows 배열 선형 검색` | `table_find_by_name_matches()`, `table_find_by_age_condition()`, `table_collect_all()`처럼 `table->rows` 배열을 순서대로 훑는 경로다. | B+Tree key가 아닌 `name`, `age`, 전체 SELECT는 배열의 row 포인터들을 직접 검사한다. |
+| `SQLResult` | `sql_execute()`가 돌려주는 결과 구조체다. | `status`, `action`, `record`, `records`, `row_count`, `inserted_id`, `error_message` 같은 필드로 성공/실패와 결과를 표현한다. |
+| `printf로 결과 출력` | `src/cli/main.c`에서 `printf()` 또는 `table_print_records()`로 결과를 터미널에 보여준다. | INSERT면 `inserted_id`, SELECT면 `records`와 `row_count`를 사용한다. |
+
 이 단계는 Chapter 10의 표준 입출력과 가장 가깝다. 사용자는 터미널에 입력하고, 프로그램은 `stdin`에서 읽고, `stdout`으로 출력한다.
 
 ## 4. 최신 커밋에는 무엇이 추가되었나
@@ -291,6 +305,26 @@ sequenceDiagram
     end
 ```
 
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `--serve 옵션으로 진입` | `src/server/server.c`의 `main()`이 `--serve`를 발견하면 `http_server_run(&http_options)`를 호출한다. | `http_options`에는 `port`, `worker_count`, `queue_capacity`, lock timeout, simulate delay 값이 들어 있다. |
+| `socket()` | `socket(AF_INET, SOCK_STREAM, 0)`으로 listening socket을 만든다. | `AF_INET`은 IPv4, `SOCK_STREAM`은 TCP, `0`은 기본 프로토콜 선택이다. |
+| `setsockopt(SO_REUSEADDR)` | `setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, ...)`로 포트 재사용 옵션을 켠다. | 서버 재시작 직후에도 같은 포트를 다시 bind하기 쉽게 만든다. |
+| `bind(port)` | `bind(listen_socket, (struct sockaddr *)&address, sizeof(address))`로 socket을 포트에 붙인다. | `address.sin_addr.s_addr = htonl(INADDR_ANY)`, `address.sin_port = htons(port)`가 핵심 값이다. |
+| `listen()` | `listen(listen_socket, 16)`으로 연결 요청을 받을 수 있는 listening socket으로 전환한다. | `16`은 OS가 대기시킬 연결 요청 backlog 크기다. |
+| `platform_thread_create() x N` | worker 수만큼 `platform_thread_create(&context.workers[worker_index], http_server_worker_main, &context)`를 호출한다. | 첫 인자는 thread handle 저장 위치, 둘째는 worker 시작 함수, 셋째는 모든 worker가 공유할 `HTTPServerContext *`다. |
+| `select(listen_socket)` | 실제로는 `http_server_socket_wait_for_read(listen_socket, 200)` 안에서 `select()`를 호출한다. | `listen_socket`에 새 연결이 왔는지 최대 `200ms` 기다린다. |
+| `새 연결 준비됨` | `select()` 결과가 0보다 크다는 뜻이다. | 0은 timeout, 음수는 에러, 양수는 읽을 수 있는 socket 존재를 의미한다. |
+| `accept()` | `accept(listen_socket, NULL, NULL)`로 client별 connected socket을 만든다. | 주소 정보를 따로 쓰지 않기 때문에 두 번째, 세 번째 인자는 `NULL`이다. 반환값이 `client_socket`이다. |
+| `push(client_socket)` | `http_request_queue_push(&context.queue, client_socket)`로 connected socket을 worker queue에 넣는다. | `context.queue`는 mutex/condition variable로 보호되는 bounded queue다. |
+| `pop()` | worker가 `http_request_queue_pop(&context->queue)`로 처리할 socket을 꺼낸다. | queue가 비어 있으면 condition variable에서 기다린다. |
+| `recv() 요청 읽기` | `http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))`가 HTTP 요청 전체를 읽는다. | `request_buffer`는 raw HTTP 문자열 저장소, `error_message`는 실패 이유 저장소다. |
+| `API/SQL 처리` | `http_server_handle_client(context, client_socket)` 안에서 `api_parse_http_request()`, `db_server_execute()`, `api_build_execution_response()`가 이어진다. | `context` 안에는 공유 `DBServer`, queue 상태, 완료 요청 수 등이 들어 있다. |
+| `send() 응답 쓰기` | 최종적으로 `http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))`가 응답 바이트를 모두 보낸다. | `raw_response`는 status line, header, JSON body를 합친 HTTP 응답 문자열이다. |
+| `close(client_socket)` | worker loop가 `http_server_socket_close(client_socket)`로 connected socket을 닫는다. | 현재 서버는 요청 하나에 응답 하나를 보낸 뒤 연결을 닫는 구조다. |
+
 ### listening socket과 connected socket
 
 Chapter 11에서 초심자가 자주 헷갈리는 부분이 listening descriptor와 connected descriptor의 차이다.
@@ -431,40 +465,66 @@ sequenceDiagram
     participant B as bptree.c
 
     par R1 SELECT by id
-        R1->>R1: request_r1.query = "SELECT * FROM users WHERE id = 1;"
-        R1->>D: db_server_execute(&context->db_server, request_r1.query, &execution_r1)
-        D->>D: query_kind = db_server_classify_query(request_r1.query) -> DB_SERVER_QUERY_KIND_READ
-        D->>D: execution_r1.used_index = db_server_guess_uses_index(request_r1.query) -> 1
+        R1->>R1: set request_r1.query to SELECT by id
+        R1->>D: db_server_execute with request_r1 and execution_r1
+        D->>D: classify request_r1 as READ
+        D->>D: mark execution_r1.used_index as true
         D->>D: execution_r1.is_write = 0
         D->>D: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)
-        D->>L: platform_rwlock_try_read_lock(&server->db_lock) -> 1
+        D->>L: try read lock succeeds
         D->>D: db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_READ)
-        D->>S: sql_execute(server->table, request_r1.query)
-        S->>T: table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)
+        D->>S: sql_execute with request_r1.query
+        S->>T: table_find_by_id_condition with id equals 1
         T->>T: table_find_by_id(table, 1)
-        T->>B: bptree_search(table->pk_index, 1)
-        B-->>T: Record*
-        T-->>S: result.records points to Record*
+        T->>B: bptree_search with key 1
+        B-->>T: Record pointer
+        T-->>S: result.records points to one Record
         S-->>D: execution_r1.result.action = SQL_ACTION_SELECT_ROWS
-        D->>L: platform_rwlock_read_unlock(&server->db_lock)
-        D->>D: db_server_metrics_query_finished(server, &execution_r1)
+        D->>L: unlock read lock
+        D->>D: finish metrics for execution_r1
     and R2 SELECT by age
-        R2->>R2: request_r2.query = "SELECT * FROM users WHERE age > 20;"
-        R2->>D: db_server_execute(&context->db_server, request_r2.query, &execution_r2)
-        D->>D: query_kind = db_server_classify_query(request_r2.query) -> DB_SERVER_QUERY_KIND_READ
-        D->>D: execution_r2.used_index = db_server_guess_uses_index(request_r2.query) -> 0
+        R2->>R2: set request_r2.query to SELECT by age
+        R2->>D: db_server_execute with request_r2 and execution_r2
+        D->>D: classify request_r2 as READ
+        D->>D: mark execution_r2.used_index as false
         D->>D: execution_r2.is_write = 0
         D->>D: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)
-        D->>L: platform_rwlock_try_read_lock(&server->db_lock) -> 1
+        D->>L: try read lock succeeds
         D->>D: db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_READ)
-        D->>S: sql_execute(server->table, request_r2.query)
-        S->>T: table_find_by_age_condition(table, TABLE_COMPARISON_GT, 20, &result.records, &result.row_count)
-        T-->>S: Record** records, size_t row_count
+        D->>S: sql_execute with request_r2.query
+        S->>T: table_find_by_age_condition with age greater than 20
+        T-->>S: Record pointer array and row count
         S-->>D: execution_r2.result.action = SQL_ACTION_SELECT_ROWS
-        D->>L: platform_rwlock_read_unlock(&server->db_lock)
-        D->>D: db_server_metrics_query_finished(server, &execution_r2)
+        D->>L: unlock read lock
+        D->>D: finish metrics for execution_r2
     end
 ```
+
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `set request_r1.query to SELECT by id` | HTTP 요청 파싱 뒤 `request.query`에 `SELECT * FROM users WHERE id = 1;`이 들어간 상황을 worker별 이름으로 표현한 것이다. | `request_r1`은 설명용 이름이고, 실제 구조체 타입은 `APIRequest`다. |
+| `db_server_execute with request_r1 and execution_r1` | 실제 HTTP 경로에서는 `db_server_execute(&context->db_server, request.query, &execution)`이다. | `context->db_server`는 공유 테이블과 lock을 가진 서버 상태, `request.query`는 SQL 문자열, `execution`은 실행 결과를 받을 구조체다. |
+| `classify request_r1 as READ` | `db_server_classify_query(request.query)`가 앞 단어 `SELECT`를 보고 `DB_SERVER_QUERY_KIND_READ`를 돌려준다. | 이 값이 read lock을 잡을지 write lock을 잡을지 결정한다. |
+| `mark execution_r1.used_index as true` | `db_server_guess_uses_index(request.query)`가 `WHERE id`를 발견해서 `1`을 돌려준다. | HTTP JSON 응답의 `usedIndex:true`로 이어지는 값이다. |
+| `execution_r1.is_write = 0` | `execution->is_write = (query_kind == DB_SERVER_QUERY_KIND_WRITE)` 결과가 0이다. | SELECT는 쓰기 요청이 아니므로 metrics와 응답에서 read로 취급된다. |
+| `db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)` | 실행 시작 시 metrics를 갱신한다. | `server`는 `DBServer *`, 두 번째 인자는 SELECT 요청 수를 올리기 위한 분류값이다. |
+| `try read lock succeeds` | 실제 호출은 `platform_rwlock_try_read_lock(&server->db_lock)`이다. | `&server->db_lock`은 공유 `Table`을 보호하는 readers-writer lock 주소다. reader끼리는 동시에 성공할 수 있다. |
+| `db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_READ)` | 읽기 지연 옵션이 있으면 `platform_sleep_ms(server->config.simulate_read_delay_ms)`를 호출한다. | 동시성 테스트에서 SELECT가 lock을 잡은 채 오래 머무르게 만들 수 있다. |
+| `sql_execute with request_r1.query` | 실제 호출은 `sql_execute(server->table, request.query)`이다. | `server->table`은 공유 users 테이블, `request.query`는 SELECT 문자열이다. |
+| `table_find_by_id_condition with id equals 1` | 실제 호출은 `table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)`이다. | `TABLE_COMPARISON_EQ`는 `=`, `1`은 WHERE의 id 값, 뒤 두 인자는 결과 배열과 row 수를 받을 출력 포인터다. |
+| `table_find_by_id(table, 1)` | `table_find_by_id()`가 id 단건 검색을 B+Tree 검색으로 넘긴다. | `table`은 조회 대상, `1`은 찾을 primary key다. |
+| `bptree_search with key 1` | 실제 호출은 `bptree_search(table->pk_index, 1)`이다. | `table->pk_index`는 id 인덱스, `1`은 검색 key다. |
+| `Record pointer` | `bptree_search()`가 저장되어 있던 `Record *`를 반환한다. | row가 없으면 `NULL`이 될 수 있다. |
+| `result.records points to one Record` | `table_find_by_id_condition()`이 찾은 `Record *`를 `result.records` 배열에 담는다. | `result.records`는 `Record **`, `result.row_count`는 찾은 row 개수다. |
+| `execution_r1.result.action = SQL_ACTION_SELECT_ROWS` | `sql_execute_select()`가 SELECT 결과임을 표시한다. | API 응답의 `"action":"select"`로 변환된다. |
+| `unlock read lock` | 실제 호출은 `platform_rwlock_read_unlock(&server->db_lock)`이다. | SELECT가 끝났으므로 다른 writer가 들어올 수 있게 read lock을 놓는다. |
+| `finish metrics for execution_r1` | 실제 호출은 `db_server_metrics_query_finished(server, &execution)`이다. | active query 수를 줄이고, 오류/timeout/not found 같은 결과별 metrics를 반영한다. |
+| `set request_r2.query to SELECT by age` | 두 번째 worker의 `request.query`가 `SELECT * FROM users WHERE age > 20;`인 상황이다. | 실제 변수명은 worker마다 로컬 `APIRequest request`이고, `request_r2`는 설명용 이름이다. |
+| `mark execution_r2.used_index as false` | `db_server_guess_uses_index()`가 `WHERE age`는 id 인덱스 조건이 아니라고 판단한다. | 그래서 HTTP 응답의 `usedIndex`는 `false`가 된다. |
+| `table_find_by_age_condition with age greater than 20` | 실제 호출은 `table_find_by_age_condition(table, TABLE_COMPARISON_GT, 20, &result.records, &result.row_count)`이다. | `TABLE_COMPARISON_GT`는 `>`, `20`은 WHERE의 age 값이며, 내부적으로 `table->rows`를 선형 검색한다. |
+| `Record pointer array and row count` | age 조건에 맞는 여러 `Record *`를 결과 배열로 돌려준다. | `Record **records`는 row 포인터 목록, `size_t row_count`는 개수다. |
 
 초심자 관점에서는 "읽는 사람끼리는 동시에 들어갈 수 있다"고 기억하면 된다. `SELECT WHERE id = 1`은 B+Tree를 쓰기 때문에 `usedIndex:true`가 되고, `SELECT WHERE age > 20`은 rows 배열을 선형으로 훑기 때문에 `usedIndex:false`가 된다.
 
@@ -483,59 +543,88 @@ sequenceDiagram
     participant T as table.c
     participant B as bptree.c
 
-    R->>R: request_r.query = "SELECT * FROM users WHERE id = 1;"
-    R->>DR: db_server_execute(&context->db_server, request_r.query, &execution_r)
-    DR->>DR: query_kind = db_server_classify_query(request_r.query) -> DB_SERVER_QUERY_KIND_READ
-    DR->>DR: execution_r.used_index = db_server_guess_uses_index(request_r.query) -> 1
+    R->>R: set request_r.query to SELECT by id
+    R->>DR: db_server_execute with read request
+    DR->>DR: classify request_r as READ
+    DR->>DR: mark execution_r.used_index as true
     DR->>DR: execution_r.is_write = 0
     DR->>DR: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)
-    DR->>L: platform_rwlock_try_read_lock(&server->db_lock) -> 1
+    DR->>L: try read lock succeeds
 
-    W->>W: request_w.query = "INSERT INTO users VALUES ('Bob', 30);"
-    W->>DW: db_server_execute(&context->db_server, request_w.query, &execution_w)
-    DW->>DW: query_kind = db_server_classify_query(request_w.query) -> DB_SERVER_QUERY_KIND_WRITE
-    DW->>DW: execution_w.used_index = db_server_guess_uses_index(request_w.query) -> 0
+    W->>W: set request_w.query to INSERT Bob
+    W->>DW: db_server_execute with write request
+    DW->>DW: classify request_w as WRITE
+    DW->>DW: mark execution_w.used_index as false
     DW->>DW: execution_w.is_write = 1
     DW->>DW: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_WRITE)
-    DW->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 0
+    DW->>L: try write lock fails
 
     par reader keeps the read lock while executing SQL
         DR->>DR: db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_READ)
-        DR->>S: sql_execute(server->table, request_r.query)
-        S->>T: table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)
+        DR->>S: sql_execute with request_r.query
+        S->>T: table_find_by_id_condition with id equals 1
         T->>T: table_find_by_id(table, 1)
-        T->>B: bptree_search(table->pk_index, 1)
-        B-->>T: Record*
-        T-->>S: result.records points to Record*
+        T->>B: bptree_search with key 1
+        B-->>T: Record pointer
+        T-->>S: result.records points to one Record
         S-->>DR: execution_r.result.action = SQL_ACTION_SELECT_ROWS
     and writer polls for write lock
-        loop until read lock is released or server->config.lock_timeout_ms expires
+        loop until read lock is released or lock timeout expires
             DW->>DW: platform_sleep_ms(1)
-            DW->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 0
+            DW->>L: try write lock again
         end
     end
 
-    DR->>L: platform_rwlock_read_unlock(&server->db_lock)
-    DR->>DR: db_server_metrics_query_finished(server, &execution_r)
+    DR->>L: unlock read lock
+    DR->>DR: finish metrics for execution_r
 
     alt writer obtains lock before timeout
-        DW->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 1
+        DW->>L: try write lock succeeds
         DW->>DW: db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_WRITE)
-        DW->>S: sql_execute(server->table, request_w.query)
-        S->>T: table_insert(table, "Bob", 30)
-        T->>T: record->id = table->next_id++
-        T->>B: bptree_insert(table->pk_index, record->id, record)
+        DW->>S: sql_execute with request_w.query
+        S->>T: table_insert with Bob age 30
+        T->>T: assign next id to record
+        T->>B: bptree_insert with new record id
         B-->>T: 1
-        T->>T: table->size++
-        T-->>S: Record* record
+        T->>T: increase table size
+        T-->>S: Record pointer
         S-->>DW: execution_w.result.action = SQL_ACTION_INSERT
-        DW->>L: platform_rwlock_write_unlock(&server->db_lock)
-        DW->>DW: db_server_metrics_query_finished(server, &execution_w)
-    else writer waits at least server->config.lock_timeout_ms
+        DW->>L: unlock write lock
+        DW->>DW: finish metrics for execution_w
+    else writer waits until lock timeout
         DW-->>W: execution_w.server_status = DB_SERVER_EXEC_STATUS_LOCK_TIMEOUT
-        DW->>DW: db_server_metrics_query_finished(server, &execution_w)
+        DW->>DW: finish metrics for execution_w
     end
 ```
+
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `set request_r.query to SELECT by id` | reader worker의 `request.query`가 `SELECT * FROM users WHERE id = 1;`인 상황이다. | `request_r`은 설명용 이름이고 실제로는 `http_server_handle_client()`의 로컬 `APIRequest request`다. |
+| `db_server_execute with read request` | 실제 호출은 `db_server_execute(&context->db_server, request.query, &execution)`이다. | 공유 `DBServer`, SELECT 문자열, 결과를 받을 `DBServerExecution`을 넘긴다. |
+| `classify request_r as READ` | `db_server_classify_query(request.query)`가 `DB_SERVER_QUERY_KIND_READ`를 반환한다. | SELECT이므로 read lock 경로로 간다. |
+| `mark execution_r.used_index as true` | `db_server_guess_uses_index()`가 `WHERE id`를 보고 1을 반환한다. | `execution.used_index`는 응답 JSON의 `usedIndex` 값이 된다. |
+| `try read lock succeeds` | `platform_rwlock_try_read_lock(&server->db_lock)`가 성공한 상태다. | 이 순간 reader는 공유 `Table`을 읽을 권한을 얻는다. |
+| `set request_w.query to INSERT Bob` | writer worker의 `request.query`가 `INSERT INTO users VALUES ('Bob', 30);`인 상황이다. | SQL 안의 `"Bob"`과 `30`이 나중에 `table_insert()`의 `name`, `age`가 된다. |
+| `db_server_execute with write request` | writer도 같은 `db_server_execute(&context->db_server, request.query, &execution)`로 들어온다. | 같은 공유 `DBServer`를 사용하므로 reader와 같은 `db_lock`을 경쟁한다. |
+| `classify request_w as WRITE` | `db_server_classify_query()`가 앞 단어 `INSERT`를 보고 `DB_SERVER_QUERY_KIND_WRITE`를 반환한다. | INSERT는 테이블을 바꾸므로 write lock이 필요하다. |
+| `mark execution_w.used_index as false` | INSERT는 SELECT가 아니므로 `db_server_guess_uses_index()`가 0을 반환한다. | INSERT 응답은 항상 `usedIndex:false`로 만들어진다. |
+| `try write lock fails` | `platform_rwlock_try_write_lock(&server->db_lock)`가 실패한 상태다. | reader가 read lock을 잡고 있으므로 writer는 동시에 들어갈 수 없다. |
+| `db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_READ)` | reader가 read lock을 잡은 상태에서 선택적으로 지연된다. | `server->config.simulate_read_delay_ms`가 0보다 크면 그만큼 sleep한다. |
+| `sql_execute with request_r.query` | reader가 `sql_execute(server->table, request.query)`로 SELECT를 실행한다. | `server->table`은 공유 테이블, `request.query`는 SELECT 문자열이다. |
+| `table_find_by_id_condition with id equals 1` | `table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)`이다. | id 1을 B+Tree 경로로 찾아 결과 배열에 담는다. |
+| `platform_sleep_ms(1)` | writer가 lock 재시도 사이에 1ms 쉰다. | busy waiting으로 CPU를 계속 태우지 않도록 짧게 양보한다. |
+| `try write lock again` | loop 안에서 `platform_rwlock_try_write_lock(&server->db_lock)`를 반복 호출한다. | read lock이 풀리면 성공하고, timeout이 먼저 오면 실패로 끝난다. |
+| `unlock read lock` | reader가 `platform_rwlock_read_unlock(&server->db_lock)`를 호출한다. | 이 시점 이후 writer가 write lock을 얻을 수 있다. |
+| `try write lock succeeds` | writer가 `platform_rwlock_try_write_lock(&server->db_lock)`에 성공한다. | 이제 writer가 테이블 변경을 독점한다. |
+| `db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_WRITE)` | 쓰기 지연 옵션이 있으면 `platform_sleep_ms(server->config.simulate_write_delay_ms)`를 호출한다. | INSERT가 write lock을 잡은 채 오래 머무르는 상황을 만들 수 있다. |
+| `sql_execute with request_w.query` | writer가 `sql_execute(server->table, request.query)`로 INSERT를 실행한다. | `request.query`는 `INSERT INTO users VALUES ('Bob', 30);`이다. |
+| `table_insert with Bob age 30` | 실제 호출은 `table_insert(table, "Bob", 30)`이다. | `table`은 공유 테이블, `"Bob"`은 새 row의 name, `30`은 age다. |
+| `assign next id to record` | `record->id = table->next_id++`가 실행된다. | write lock 덕분에 동시에 두 writer가 같은 id를 가져가지 않는다. |
+| `bptree_insert with new record id` | 실제 호출은 `bptree_insert(table->pk_index, record->id, record)`이다. | 새 row를 id 인덱스에 추가한다. |
+| `increase table size` | `table->size++`로 row 개수를 늘린다. | rows 배열에 새 `Record *`가 들어간 뒤 수행된다. |
+| `execution_w.server_status = DB_SERVER_EXEC_STATUS_LOCK_TIMEOUT` | writer가 timeout까지 lock을 못 얻은 실패 분기다. | 이 경우 `sql_execute()`는 호출되지 않고 API 응답은 `503 lock_timeout`이 된다. |
 
 반대로 `INSERT`가 먼저 write lock을 잡으면 `SELECT`가 `platform_rwlock_try_read_lock(&server->db_lock)`에서 기다린다. 즉, 읽기와 쓰기는 동시에 테이블에 들어가지 않는다.
 
@@ -554,60 +643,85 @@ sequenceDiagram
     participant T as table.c
     participant B as bptree.c
 
-    W1->>W1: request_w1.query = "INSERT INTO users VALUES ('Alice', 20);"
-    W1->>D1: db_server_execute(&context->db_server, request_w1.query, &execution_w1)
-    D1->>D1: query_kind = db_server_classify_query(request_w1.query) -> DB_SERVER_QUERY_KIND_WRITE
-    D1->>D1: execution_w1.used_index = db_server_guess_uses_index(request_w1.query) -> 0
+    W1->>W1: set request_w1.query to INSERT Alice
+    W1->>D1: db_server_execute with first write request
+    D1->>D1: classify request_w1 as WRITE
+    D1->>D1: mark execution_w1.used_index as false
     D1->>D1: execution_w1.is_write = 1
     D1->>D1: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_WRITE)
-    D1->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 1
+    D1->>L: try write lock succeeds
 
-    W2->>W2: request_w2.query = "INSERT INTO users VALUES ('Bob', 30);"
-    W2->>D2: db_server_execute(&context->db_server, request_w2.query, &execution_w2)
-    D2->>D2: query_kind = db_server_classify_query(request_w2.query) -> DB_SERVER_QUERY_KIND_WRITE
-    D2->>D2: execution_w2.used_index = db_server_guess_uses_index(request_w2.query) -> 0
+    W2->>W2: set request_w2.query to INSERT Bob
+    W2->>D2: db_server_execute with second write request
+    D2->>D2: classify request_w2 as WRITE
+    D2->>D2: mark execution_w2.used_index as false
     D2->>D2: execution_w2.is_write = 1
     D2->>D2: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_WRITE)
-    D2->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 0
+    D2->>L: try write lock fails
 
     par W1 keeps the write lock while inserting Alice
         D1->>D1: db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_WRITE)
-        D1->>S: sql_execute(server->table, request_w1.query)
-        S->>T: table_insert(table, "Alice", 20)
-        T->>T: record->id = table->next_id++
-        T->>B: bptree_insert(table->pk_index, record->id, record)
+        D1->>S: sql_execute with request_w1.query
+        S->>T: table_insert with Alice age 20
+        T->>T: assign next id to record
+        T->>B: bptree_insert with new record id
         B-->>T: 1
-        T->>T: table->size++
-        T-->>S: Record* record
+        T->>T: increase table size
+        T-->>S: Record pointer
         S-->>D1: execution_w1.result.action = SQL_ACTION_INSERT
     and W2 polls for write lock
-        loop until W1 releases write lock or server->config.lock_timeout_ms expires
+        loop until W1 releases write lock or lock timeout expires
             D2->>D2: platform_sleep_ms(1)
-            D2->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 0
+            D2->>L: try write lock again
         end
     end
 
-    D1->>L: platform_rwlock_write_unlock(&server->db_lock)
-    D1->>D1: db_server_metrics_query_finished(server, &execution_w1)
+    D1->>L: unlock write lock
+    D1->>D1: finish metrics for execution_w1
 
     alt W2 obtains lock before timeout
-        D2->>L: platform_rwlock_try_write_lock(&server->db_lock) -> 1
+        D2->>L: try write lock succeeds
         D2->>D2: db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_WRITE)
-        D2->>S: sql_execute(server->table, request_w2.query)
-        S->>T: table_insert(table, "Bob", 30)
-        T->>T: record->id = table->next_id++
-        T->>B: bptree_insert(table->pk_index, record->id, record)
+        D2->>S: sql_execute with request_w2.query
+        S->>T: table_insert with Bob age 30
+        T->>T: assign next id to record
+        T->>B: bptree_insert with new record id
         B-->>T: 1
-        T->>T: table->size++
-        T-->>S: Record* record
+        T->>T: increase table size
+        T-->>S: Record pointer
         S-->>D2: execution_w2.result.action = SQL_ACTION_INSERT
-        D2->>L: platform_rwlock_write_unlock(&server->db_lock)
-        D2->>D2: db_server_metrics_query_finished(server, &execution_w2)
-    else W2 waits at least server->config.lock_timeout_ms
+        D2->>L: unlock write lock
+        D2->>D2: finish metrics for execution_w2
+    else W2 waits until lock timeout
         D2-->>W2: execution_w2.server_status = DB_SERVER_EXEC_STATUS_LOCK_TIMEOUT
-        D2->>D2: db_server_metrics_query_finished(server, &execution_w2)
+        D2->>D2: finish metrics for execution_w2
     end
 ```
+
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `set request_w1.query to INSERT Alice` | 첫 번째 writer의 `request.query`가 `INSERT INTO users VALUES ('Alice', 20);`인 상황이다. | `"Alice"`와 `20`은 SQL 파서가 꺼내서 `table_insert()`로 넘길 값이다. |
+| `db_server_execute with first write request` | 실제 호출은 `db_server_execute(&context->db_server, request.query, &execution)`이다. | 첫 번째 worker도 공유 `DBServer`의 같은 `db_lock`을 사용한다. |
+| `classify request_w1 as WRITE` | `db_server_classify_query()`가 `INSERT`를 보고 `DB_SERVER_QUERY_KIND_WRITE`를 반환한다. | write lock을 사용하라는 신호다. |
+| `mark execution_w1.used_index as false` | `db_server_guess_uses_index()`가 INSERT에 대해 0을 반환한다. | INSERT는 SELECT 인덱스 조회가 아니므로 `usedIndex:false`다. |
+| `try write lock succeeds` | W1의 `platform_rwlock_try_write_lock(&server->db_lock)`가 먼저 성공한다. | W1이 테이블 변경 권한을 독점한다. |
+| `set request_w2.query to INSERT Bob` | 두 번째 writer의 `request.query`가 `INSERT INTO users VALUES ('Bob', 30);`인 상황이다. | `"Bob"`과 `30`은 두 번째 INSERT의 row 값이다. |
+| `db_server_execute with second write request` | W2도 `db_server_execute(&context->db_server, request.query, &execution)`로 들어온다. | W1과 같은 공유 테이블을 쓰려 하므로 같은 write lock을 기다린다. |
+| `try write lock fails` | W2의 `platform_rwlock_try_write_lock(&server->db_lock)`가 실패한다. | 이미 W1이 write lock을 잡고 있어서 writer끼리는 동시에 실행될 수 없다. |
+| `db_server_apply_simulated_delay(server, DB_SERVER_QUERY_KIND_WRITE)` | W1이 write lock을 잡은 상태에서 선택적으로 sleep한다. | `server->config.simulate_write_delay_ms`가 쓰기 지연 시간이다. |
+| `sql_execute with request_w1.query` | W1이 `sql_execute(server->table, request.query)`로 Alice INSERT를 실행한다. | `server->table`은 공유 테이블, `request.query`는 Alice INSERT SQL이다. |
+| `table_insert with Alice age 20` | 실제 호출은 `table_insert(table, "Alice", 20)`이다. | 새 `Record`를 만들고 `id`, `name`, `age`를 채운다. |
+| `assign next id to record` | `record->id = table->next_id++`가 실행된다. | write lock 안에서 실행되므로 id 증가가 원자적인 순서처럼 보호된다. |
+| `bptree_insert with new record id` | 실제 호출은 `bptree_insert(table->pk_index, record->id, record)`이다. | rows 배열뿐 아니라 id 인덱스에도 새 record를 연결한다. |
+| `increase table size` | `table->size++`로 저장된 row 개수를 늘린다. | 이후 SELECT 전체 조회나 선형 검색 범위가 넓어진다. |
+| `platform_sleep_ms(1)` | W2가 lock 재시도 사이에 1ms 쉰다. | `db_server_try_acquire_lock()` loop의 대기 동작이다. |
+| `try write lock again` | W2가 `platform_rwlock_try_write_lock(&server->db_lock)`를 반복 시도한다. | W1이 unlock하기 전에는 계속 실패할 수 있다. |
+| `unlock write lock` | W1 또는 W2가 작업을 마치고 `platform_rwlock_write_unlock(&server->db_lock)`를 호출한다. | 다음 reader 또는 writer가 lock을 얻을 수 있게 된다. |
+| `sql_execute with request_w2.query` | W2가 lock을 얻은 뒤 Bob INSERT를 실행한다. | SQL 문자열은 `INSERT INTO users VALUES ('Bob', 30);`이다. |
+| `table_insert with Bob age 30` | 실제 호출은 `table_insert(table, "Bob", 30)`이다. | Alice가 먼저 들어갔다면 Bob은 다음 `next_id` 값을 받는다. |
+| `execution_w2.server_status = DB_SERVER_EXEC_STATUS_LOCK_TIMEOUT` | W2가 timeout까지 write lock을 얻지 못한 분기다. | SQL은 실행되지 않고, API 응답은 `503 lock_timeout`으로 만들어진다. |
 
 이 흐름에서 `record->id = table->next_id++`가 한 worker씩만 실행되는 이유는 write lock 덕분이다. 빈 테이블에서 시작했다면 예시처럼 첫 INSERT는 `insertedId:1`, 두 번째 INSERT는 `insertedId:2`가 되지만, 이미 데이터가 있으면 현재 `table->next_id` 값부터 이어진다.
 
@@ -730,39 +844,79 @@ sequenceDiagram
     C->>H: TCP connection request to server port
     H->>H: http_server_socket_wait_for_read(listen_socket, 200)
     H->>H: accept(listen_socket, NULL, NULL)
-    H->>H: http_request_queue_push(&context.queue, client_socket)
-    W->>H: http_request_queue_pop(&context->queue)
+    H->>H: push client_socket into request queue
+    W->>H: pop client_socket from request queue
     H-->>W: client_socket
     W->>H: http_server_handle_client(context, client_socket)
-    C->>H: POST /query body.query = "INSERT INTO users VALUES ('Alice', 20);"
+    C->>H: POST query with INSERT Alice body
     H->>H: http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))
-    H->>A: api_parse_http_request(request_buffer, &request, error_message, sizeof(error_message))
-    A-->>H: request.method = API_METHOD_POST, request.path = "/query", request.query = "INSERT INTO users VALUES ('Alice', 20);"
-    H->>D: db_server_execute(&context->db_server, request.query, &execution)
-    D->>D: db_server_classify_query(request.query) -> DB_SERVER_QUERY_KIND_WRITE
-    D->>D: db_server_guess_uses_index(request.query) -> 0
+    H->>A: api_parse_http_request with request_buffer
+    A-->>H: request contains POST path and INSERT query
+    H->>D: db_server_execute with parsed request
+    D->>D: classify request as WRITE
+    D->>D: used_index is false
     D->>D: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_WRITE)
     D->>D: db_server_try_acquire_lock(server, DB_SERVER_QUERY_KIND_WRITE)
-    D->>D: platform_rwlock_try_write_lock(&server->db_lock)
-    D->>S: sql_execute(server->table, "INSERT INTO users VALUES ('Alice', 20);")
+    D->>D: try write lock on db_lock
+    D->>S: sql_execute with INSERT Alice query
     S->>S: sql_execute_insert(table, input)
-    S->>T: table_insert(table, "Alice", 20)
-    T->>B: bptree_insert(table->pk_index, record->id, record)
+    S->>T: table_insert with Alice age 20
+    T->>B: bptree_insert with new record id
     B-->>T: 1
-    T-->>S: Record* record, record->id = 1
+    T-->>S: inserted Record with id 1
     S-->>D: SQLResult
     D->>D: db_server_release_lock(server, DB_SERVER_QUERY_KIND_WRITE)
-    D->>D: db_server_metrics_query_finished(server, &execution)
+    D->>D: finish metrics for execution
     D-->>H: execution.result.action = SQL_ACTION_INSERT, execution.result.inserted_id = 1
-    H->>A: api_build_execution_response(&execution, &response)
-    A-->>H: response.status_code = 200, body = {"ok":true,"status":"ok","action":"insert","insertedId":1,"usedIndex":false}
-    H->>H: http_server_send_response(client_socket, &response)
-    H->>A: api_render_http_response(&response, &raw_response)
+    H->>A: build execution response
+    A-->>H: response status 200 with insert JSON
+    H->>H: send API response
+    H->>A: render raw HTTP response
     H->>H: http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))
     H-->>C: HTTP/1.1 200 OK + JSON insert result
-    H->>D: db_server_execution_destroy(&execution)
-    H->>A: api_response_destroy(&response)
+    H->>D: destroy DB execution
+    H->>A: destroy API response
 ```
+
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `TCP connection request to server port` | client가 서버 port로 TCP 연결을 요청한다. | 서버 쪽에서는 listening socket이 이 연결 요청을 감지한다. |
+| `http_server_socket_wait_for_read(listen_socket, 200)` | `select()`로 listening socket에 새 연결이 왔는지 기다린다. | `listen_socket`은 서버용 socket, `200`은 timeout 밀리초다. |
+| `accept(listen_socket, NULL, NULL)` | 새 client 연결을 받아 `client_socket`을 만든다. | `NULL, NULL`은 client 주소 정보를 따로 받지 않겠다는 뜻이다. |
+| `push client_socket into request queue` | 실제 호출은 `http_request_queue_push(&context.queue, client_socket)`이다. | `context.queue`는 worker가 꺼내 갈 socket queue, `client_socket`은 방금 accept한 연결이다. |
+| `pop client_socket from request queue` | 실제 호출은 `http_request_queue_pop(&context->queue)`이다. | worker thread가 처리할 socket 하나를 queue에서 꺼낸다. |
+| `client_socket` | queue에서 꺼낸 connected socket 값이 worker에게 전달된다는 뜻이다. | 이후 `recv()`와 `send()`는 모두 이 `client_socket`에 대해 수행된다. |
+| `http_server_handle_client(context, client_socket)` | worker가 요청 하나를 처리하는 핵심 함수다. | `context`에는 공유 `DBServer`, queue 상태, 완료 카운터가 있고, `client_socket`은 요청/응답용 연결이다. |
+| `POST query with INSERT Alice body` | 실제 HTTP body는 예를 들어 `{"query":"INSERT INTO users VALUES ('Alice', 20);"}`이다. | `POST /query` endpoint는 JSON body 안의 `query` 문자열만 SQL로 사용한다. |
+| `http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))` | socket에서 header와 body를 읽어 raw HTTP 문자열로 만든다. | `request_buffer`는 수신 버퍼, `sizeof(request_buffer)`는 버퍼 한계, `error_message`는 실패 이유 저장 버퍼다. |
+| `api_parse_http_request with request_buffer` | 실제 호출은 `api_parse_http_request(request_buffer, &request, error_message, sizeof(error_message))`이다. | raw HTTP를 `APIRequest request` 구조체로 파싱한다. |
+| `request contains POST path and INSERT query` | 파싱 결과가 `request.method = API_METHOD_POST`, `request.path = "/query"`, `request.query = "INSERT INTO users VALUES ('Alice', 20);"`가 된다는 뜻이다. | `request.query`가 다음 단계의 SQL 입력이 된다. |
+| `db_server_execute with parsed request` | 실제 호출은 `db_server_execute(&context->db_server, request.query, &execution)`이다. | 공유 DB 서버 상태, SQL 문자열, 실행 결과를 받을 `DBServerExecution`을 넘긴다. |
+| `classify request as WRITE` | `db_server_classify_query(request.query)`가 `INSERT`를 보고 `DB_SERVER_QUERY_KIND_WRITE`를 반환한다. | write lock을 잡아야 한다는 의미다. |
+| `used_index is false` | `db_server_guess_uses_index(request.query)`가 0을 반환한다. | INSERT는 id 인덱스를 조회하는 SELECT가 아니므로 `usedIndex:false`다. |
+| `db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_WRITE)` | INSERT 요청 시작 metrics를 올린다. | `total_query_requests`, `active_query_requests`, `total_insert_requests`가 증가한다. |
+| `db_server_try_acquire_lock(server, DB_SERVER_QUERY_KIND_WRITE)` | write lock을 얻을 때까지 시도하거나 timeout을 판단한다. | `server`는 lock과 timeout 설정을 가진 `DBServer *`, 두 번째 인자는 write lock 경로 선택값이다. |
+| `try write lock on db_lock` | 내부 호출은 `platform_rwlock_try_write_lock(&server->db_lock)`이다. | 다른 reader/writer가 없을 때만 성공한다. |
+| `sql_execute with INSERT Alice query` | 실제 호출은 `sql_execute(server->table, request.query)`이다. | `server->table`은 공유 테이블, `request.query`는 INSERT SQL이다. |
+| `sql_execute_insert(table, input)` | `sql_execute()` 안에서 INSERT 문법을 파싱하고 실행하는 static 함수다. | `table`은 저장 대상, `input`은 `INSERT INTO users VALUES ('Alice', 20);` 문자열이다. |
+| `table_insert with Alice age 20` | 실제 호출은 `table_insert(table, "Alice", 20)`이다. | SQL에서 파싱한 name과 age를 새 `Record`에 저장한다. |
+| `bptree_insert with new record id` | 실제 호출은 `bptree_insert(table->pk_index, record->id, record)`이다. | 자동 생성된 id를 key로 삼아 B+Tree에 `Record *`를 저장한다. |
+| `1` | `bptree_insert()`가 성공을 뜻하는 `1`을 반환한다. | 중복 key이거나 내부 오류면 0이 될 수 있지만, `next_id`로 만든 새 id라 일반적으로 성공한다. |
+| `inserted Record with id 1` | `table_insert()`가 새 `Record *`를 반환하고, 그 record의 id가 1인 예시다. | 빈 테이블에서 첫 INSERT라면 `record->id = 1`이 된다. |
+| `SQLResult` | `sql_execute()`가 `SQLResult`를 반환한다. | INSERT 성공이면 `status = SQL_STATUS_OK`, `action = SQL_ACTION_INSERT`, `inserted_id = 1`이다. |
+| `db_server_release_lock(server, DB_SERVER_QUERY_KIND_WRITE)` | SQL 실행 후 write lock을 해제한다. | 내부에서 `platform_rwlock_write_unlock(&server->db_lock)`가 호출된다. |
+| `finish metrics for execution` | 실제 호출은 `db_server_metrics_query_finished(server, &execution)`이다. | active query 수를 줄이고 실행 결과별 metrics를 반영한다. |
+| `execution.result.action = SQL_ACTION_INSERT, execution.result.inserted_id = 1` | `db_server_execute()`가 HTTP layer로 넘기는 실행 결과 요약이다. | API 응답 생성 함수가 `inserted_id`를 JSON의 `insertedId`로 사용한다. |
+| `build execution response` | 실제 호출은 `api_build_execution_response(&execution, &response)`이다. | `execution`을 읽어 HTTP status와 JSON body를 채운 `APIResponse`를 만든다. |
+| `response status 200 with insert JSON` | INSERT 성공 시 body는 `{"ok":true,"status":"ok","action":"insert","insertedId":1,"usedIndex":false}` 모양이다. | `response.status_code = 200`, `response.body`가 동적 할당된 JSON 문자열이다. |
+| `send API response` | 실제 호출은 `http_server_send_response(client_socket, &response)`이다. | 이 wrapper 안에서 HTTP 문자열 렌더링과 socket 전송이 일어난다. |
+| `render raw HTTP response` | 실제 호출은 `api_render_http_response(&response, &raw_response)`이다. | `APIResponse`를 `HTTP/1.1 200 OK`, header, body가 합쳐진 문자열로 만든다. |
+| `http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))` | raw HTTP 응답 전체를 TCP socket으로 보낸다. | `strlen(raw_response)`만큼 모두 전송할 때까지 `send()`를 반복한다. |
+| `HTTP/1.1 200 OK + JSON insert result` | client가 받는 최종 응답이다. | status line, `Content-Type`, `Content-Length`, JSON body가 포함된다. |
+| `destroy DB execution` | 실제 호출은 `db_server_execution_destroy(&execution)`이다. | `SQLResult`가 가진 `records` 같은 heap 메모리를 정리하고 구조체를 초기화한다. |
+| `destroy API response` | 실제 호출은 `api_response_destroy(&response)`이다. | `response.body`를 `free()`하고 response 필드를 초기화한다. |
 
 이 INSERT 흐름에서 가장 중요한 실제 파라미터는 `table_insert(table, "Alice", 20)`이다. `id`는 요청 body에 없고, `table_insert()` 안에서 `record->id = table->next_id++`로 자동 생성된다.
 
@@ -784,40 +938,80 @@ sequenceDiagram
     C->>H: TCP connection request to server port
     H->>H: http_server_socket_wait_for_read(listen_socket, 200)
     H->>H: accept(listen_socket, NULL, NULL)
-    H->>H: http_request_queue_push(&context.queue, client_socket)
-    W->>H: http_request_queue_pop(&context->queue)
+    H->>H: push client_socket into request queue
+    W->>H: pop client_socket from request queue
     H-->>W: client_socket
     W->>H: http_server_handle_client(context, client_socket)
-    C->>H: POST /query body.query = "SELECT * FROM users WHERE id = 1;"
+    C->>H: POST query with SELECT by id body
     H->>H: http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))
-    H->>A: api_parse_http_request(request_buffer, &request, error_message, sizeof(error_message))
-    A-->>H: request.method = API_METHOD_POST, request.path = "/query", request.query = "SELECT * FROM users WHERE id = 1;"
-    H->>D: db_server_execute(&context->db_server, request.query, &execution)
-    D->>D: db_server_classify_query(request.query) -> DB_SERVER_QUERY_KIND_READ
-    D->>D: db_server_guess_uses_index(request.query) -> 1
+    H->>A: api_parse_http_request with request_buffer
+    A-->>H: request contains POST path and SELECT query
+    H->>D: db_server_execute with parsed request
+    D->>D: classify request as READ
+    D->>D: used_index is true
     D->>D: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)
     D->>D: db_server_try_acquire_lock(server, DB_SERVER_QUERY_KIND_READ)
-    D->>D: platform_rwlock_try_read_lock(&server->db_lock)
-    D->>S: sql_execute(server->table, "SELECT * FROM users WHERE id = 1;")
+    D->>D: try read lock on db_lock
+    D->>S: sql_execute with SELECT by id query
     S->>S: sql_execute_select(table, input)
-    S->>T: table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)
+    S->>T: table_find_by_id_condition with id equals 1
     T->>T: table_find_by_id(table, 1)
-    T->>B: bptree_search(table->pk_index, 1)
+    T->>B: bptree_search with key 1
     B-->>T: Record* Alice
-    T-->>S: result.records[0] = Record{id=1,name="Alice",age=20}, result.row_count = 1
+    T-->>S: one Alice row
     S-->>D: SQLResult
     D->>D: db_server_release_lock(server, DB_SERVER_QUERY_KIND_READ)
-    D->>D: db_server_metrics_query_finished(server, &execution)
+    D->>D: finish metrics for execution
     D-->>H: execution.used_index = 1, execution.result.action = SQL_ACTION_SELECT_ROWS
-    H->>A: api_build_execution_response(&execution, &response)
-    A-->>H: response.status_code = 200, body = {"ok":true,"status":"ok","action":"select","rowCount":1,"usedIndex":true,"rows":[{"id":1,"name":"Alice","age":20}]}
-    H->>H: http_server_send_response(client_socket, &response)
-    H->>A: api_render_http_response(&response, &raw_response)
+    H->>A: build execution response
+    A-->>H: response status 200 with select JSON
+    H->>H: send API response
+    H->>A: render raw HTTP response
     H->>H: http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))
     H-->>C: HTTP/1.1 200 OK + JSON select result
-    H->>D: db_server_execution_destroy(&execution)
-    H->>A: api_response_destroy(&response)
+    H->>D: destroy DB execution
+    H->>A: destroy API response
 ```
+
+#### 화살표 라벨 해설
+
+| 다이어그램 라벨 | 현재 코드 기준 실제 의미 | 매개변수/값의 뜻 |
+|---|---|---|
+| `TCP connection request to server port` | client가 서버 port로 TCP 연결을 요청한다. | INSERT와 마찬가지로 listening socket이 새 연결을 감지한다. |
+| `http_server_socket_wait_for_read(listen_socket, 200)` | `select()`로 새 연결 준비 여부를 확인한다. | `200`은 서버 loop가 stop 요청도 확인할 수 있게 하는 짧은 대기 시간이다. |
+| `accept(listen_socket, NULL, NULL)` | 연결 요청을 받아 `client_socket`을 만든다. | 이 socket은 해당 client와의 실제 데이터 송수신에 쓰인다. |
+| `push client_socket into request queue` | `http_request_queue_push(&context.queue, client_socket)`로 worker queue에 넣는다. | queue가 가득 차면 `503 queue_full` 경로로 갈 수 있다. |
+| `pop client_socket from request queue` | worker가 `http_request_queue_pop(&context->queue)`로 socket을 꺼낸다. | queue가 비어 있으면 worker는 condition variable에서 기다린다. |
+| `http_server_handle_client(context, client_socket)` | worker가 HTTP 요청 하나를 읽고, API 처리와 SQL 실행, 응답 전송까지 담당한다. | `context`의 `db_server`가 모든 worker 사이에서 공유된다. |
+| `POST query with SELECT by id body` | 실제 HTTP body는 예를 들어 `{"query":"SELECT * FROM users WHERE id = 1;"}`이다. | `request.query`에 들어갈 SQL 문자열이다. |
+| `http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))` | socket에서 raw HTTP 요청을 읽는다. | Content-Length를 보고 body까지 들어왔는지 확인한다. |
+| `api_parse_http_request with request_buffer` | 실제 호출은 `api_parse_http_request(request_buffer, &request, error_message, sizeof(error_message))`이다. | request line, headers, JSON body를 해석해 `APIRequest`를 채운다. |
+| `request contains POST path and SELECT query` | 파싱 결과가 `request.method = API_METHOD_POST`, `request.path = "/query"`, `request.query = "SELECT * FROM users WHERE id = 1;"`가 된다는 뜻이다. | 이 SELECT 문자열이 DB layer로 전달된다. |
+| `db_server_execute with parsed request` | 실제 호출은 `db_server_execute(&context->db_server, request.query, &execution)`이다. | 공유 테이블을 대상으로 SELECT를 실행하고 `execution`에 결과를 담는다. |
+| `classify request as READ` | `db_server_classify_query(request.query)`가 `SELECT`를 보고 `DB_SERVER_QUERY_KIND_READ`를 반환한다. | read lock 경로로 들어간다. |
+| `used_index is true` | `db_server_guess_uses_index(request.query)`가 `WHERE id`를 보고 1을 반환한다. | API 응답의 `usedIndex:true`가 된다. |
+| `db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)` | SELECT 요청 시작 metrics를 올린다. | `total_query_requests`, `active_query_requests`, `total_select_requests`가 증가한다. |
+| `db_server_try_acquire_lock(server, DB_SERVER_QUERY_KIND_READ)` | read lock을 얻을 때까지 시도하거나 timeout을 판단한다. | reader끼리는 동시에 성공할 수 있지만 writer가 있으면 기다린다. |
+| `try read lock on db_lock` | 내부 호출은 `platform_rwlock_try_read_lock(&server->db_lock)`이다. | `&server->db_lock`은 공유 `Table` 접근을 보호한다. |
+| `sql_execute with SELECT by id query` | 실제 호출은 `sql_execute(server->table, request.query)`이다. | `request.query`는 `SELECT * FROM users WHERE id = 1;`이다. |
+| `sql_execute_select(table, input)` | `sql_execute()` 안에서 SELECT 문법을 파싱하고 실행하는 static 함수다. | `table`은 조회 대상, `input`은 SELECT SQL 문자열이다. |
+| `table_find_by_id_condition with id equals 1` | 실제 호출은 `table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)`이다. | `TABLE_COMPARISON_EQ`와 `1`은 `WHERE id = 1`에서 온 값이다. |
+| `table_find_by_id(table, 1)` | id 단건 검색을 수행한다. | 내부에서 B+Tree 인덱스를 사용한다. |
+| `bptree_search with key 1` | 실제 호출은 `bptree_search(table->pk_index, 1)`이다. | id 인덱스에서 key 1에 연결된 `Record *`를 찾는다. |
+| `Record* Alice` | B+Tree에서 찾은 row 포인터가 Alice record인 예시다. | 직전 INSERT로 Alice가 id 1을 받았다는 전제다. |
+| `one Alice row` | `result.records[0]`에 Alice `Record *`가 들어가고 `result.row_count = 1`이 된다는 뜻이다. | row가 없으면 `SQL_STATUS_NOT_FOUND`가 될 수 있다. |
+| `SQLResult` | `sql_execute()`가 SELECT 실행 결과를 반환한다. | 성공이면 `action = SQL_ACTION_SELECT_ROWS`, `records`와 `row_count`가 채워진다. |
+| `db_server_release_lock(server, DB_SERVER_QUERY_KIND_READ)` | SELECT 실행 후 read lock을 해제한다. | 내부에서 `platform_rwlock_read_unlock(&server->db_lock)`가 호출된다. |
+| `finish metrics for execution` | `db_server_metrics_query_finished(server, &execution)`가 실행 종료 metrics를 반영한다. | not found, syntax error, lock timeout 같은 결과도 여기서 집계된다. |
+| `execution.used_index = 1, execution.result.action = SQL_ACTION_SELECT_ROWS` | HTTP layer로 돌아온 실행 결과 요약이다. | 응답 JSON에 `usedIndex:true`, `action:"select"`로 들어간다. |
+| `build execution response` | 실제 호출은 `api_build_execution_response(&execution, &response)`이다. | SELECT 결과 rows를 JSON 배열로 직렬화한다. |
+| `response status 200 with select JSON` | 성공 body는 `{"ok":true,"status":"ok","action":"select","rowCount":1,"usedIndex":true,"rows":[...]}` 모양이다. | rows 배열에는 `id`, `name`, `age`가 들어간다. |
+| `send API response` | 실제 호출은 `http_server_send_response(client_socket, &response)`이다. | wrapper 함수가 렌더링과 전송을 묶어서 처리한다. |
+| `render raw HTTP response` | 실제 호출은 `api_render_http_response(&response, &raw_response)`이다. | `Content-Length`를 계산해 HTTP 응답 문자열을 만든다. |
+| `http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))` | 응답 문자열을 socket에 끝까지 쓴다. | 내부에서 `send()`가 반복 호출될 수 있다. |
+| `HTTP/1.1 200 OK + JSON select result` | client가 받는 최종 SELECT 응답이다. | HTTP header와 JSON body가 같이 전송된다. |
+| `destroy DB execution` | `db_server_execution_destroy(&execution)`로 SQL 결과 메모리를 정리한다. | 특히 SELECT의 `result.records` 배열을 해제한다. |
+| `destroy API response` | `api_response_destroy(&response)`로 JSON body 메모리를 정리한다. | `response.body`를 `free()`한다. |
 
 초기 커밋에서는 `Client`, `http_server.c`, `api.c`, `db_server.c`가 없었다. 최신 커밋은 기존 `sql.c -> table.c -> bptree.c` 앞뒤에 서버용 입출력 계층을 붙인 것이다.
 
