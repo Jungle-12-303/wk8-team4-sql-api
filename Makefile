@@ -2,15 +2,17 @@ CC = gcc
 
 ifeq ($(OS),Windows_NT)
 THREAD_FLAGS =
+POSIX_DEFS =
 SOCKET_LIBS = -lws2_32
 BIN_EXT = .exe
 else
 THREAD_FLAGS = -pthread
+POSIX_DEFS = -D_XOPEN_SOURCE=700
 SOCKET_LIBS =
 BIN_EXT =
 endif
 
-CFLAGS = -std=c11 -Wall -Wextra -Werror -pedantic -O2 $(THREAD_FLAGS) -Isrc/core -Isrc/server
+CFLAGS = -std=c11 -Wall -Wextra -Werror -pedantic -O2 $(POSIX_DEFS) $(THREAD_FLAGS) -Isrc/core -Isrc/server
 
 BUILD_DIR = build
 BIN_DIR = $(BUILD_DIR)/bin
