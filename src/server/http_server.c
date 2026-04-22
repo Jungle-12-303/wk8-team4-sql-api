@@ -8,17 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <ws2tcpip.h>
-typedef SOCKET HTTPSocket;
-#define HTTP_INVALID_SOCKET INVALID_SOCKET
-static volatile LONG http_server_stop_requested = 0;
-#else
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -29,7 +18,6 @@ static volatile LONG http_server_stop_requested = 0;
 typedef int HTTPSocket;
 #define HTTP_INVALID_SOCKET (-1)
 static volatile sig_atomic_t http_server_stop_requested = 0;
-#endif
 
 #define HTTP_SERVER_REQUEST_BUFFER_SIZE 8192
 
@@ -53,71 +41,33 @@ typedef struct HTTPServerContext {
     unsigned long long completed_responses;
 } HTTPServerContext;
 
-#ifdef _WIN32
-static BOOL WINAPI http_server_console_handler(DWORD ctrl_type) {
-    if (ctrl_type == CTRL_C_EVENT ||
-        ctrl_type == CTRL_BREAK_EVENT ||
-        ctrl_type == CTRL_CLOSE_EVENT ||
-        ctrl_type == CTRL_SHUTDOWN_EVENT) {
-        InterlockedExchange(&http_server_stop_requested, 1);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-#else
 static void http_server_signal_handler(int signal_number) {
     (void)signal_number;
     http_server_stop_requested = 1;
 }
-#endif
 
 static void http_server_request_stop(void) {
-#ifdef _WIN32
-    InterlockedExchange(&http_server_stop_requested, 1);
-#else
     http_server_stop_requested = 1;
-#endif
 }
 
 static int http_server_should_stop(void) {
-#ifdef _WIN32
-    return InterlockedCompareExchange(&http_server_stop_requested, 0, 0) != 0;
-#else
     return http_server_stop_requested != 0;
-#endif
 }
 
 static int http_server_install_signal_handlers(void) {
-#ifdef _WIN32
-    return SetConsoleCtrlHandler(http_server_console_handler, TRUE) != 0;
-#else
     return signal(SIGINT, http_server_signal_handler) != SIG_ERR &&
            signal(SIGTERM, http_server_signal_handler) != SIG_ERR;
-#endif
 }
 
 static int http_server_socket_runtime_init(void) {
-#ifdef _WIN32
-    WSADATA wsa_data;
-    return WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0;
-#else
     return 1;
-#endif
 }
 
 static void http_server_socket_runtime_cleanup(void) {
-#ifdef _WIN32
-    WSACleanup();
-#endif
 }
 
 static void http_server_socket_close(HTTPSocket socket_handle) {
-#ifdef _WIN32
-    closesocket(socket_handle);
-#else
     close(socket_handle);
-#endif
 }
 
 static int http_server_socket_send_all(HTTPSocket socket_handle, const char *buffer, size_t length) {
@@ -147,11 +97,7 @@ static int http_server_socket_wait_for_read(HTTPSocket socket_handle, unsigned i
     timeout.tv_sec = (long)(timeout_ms / 1000U);
     timeout.tv_usec = (long)(timeout_ms % 1000U) * 1000L;
 
-#ifdef _WIN32
-    select_result = select(0, &read_fds, NULL, NULL, &timeout);
-#else
     select_result = select(socket_handle + 1, &read_fds, NULL, NULL, &timeout);
-#endif
 
     return select_result;
 }
@@ -555,11 +501,7 @@ int http_server_run(const HTTPServerOptions *options) {
         return 1;
     }
 
-#ifdef _WIN32
-    InterlockedExchange(&http_server_stop_requested, 0);
-#else
     http_server_stop_requested = 0;
-#endif
 
     db_server_config_default(&db_config);
     db_config.lock_timeout_ms = effective_options.lock_timeout_ms;
