@@ -42,25 +42,80 @@ docs/       설계 문서, 순차 다이어그램, 검증 가이드
 outputs/    발표 자료 초안과 PPT 산출물
 ```
 
-## 전체 아키텍처
+## API 서버 아키텍처
 
 ```text
-client
-  -> accept()
-  -> HTTPRequestQueue
-  -> worker thread
-  -> api_parse_http_request()
-  -> db_server_execute()
-  -> sql_execute()
-  -> Table / B+Tree
-  -> JSON response
+┌──────────────────────── src/server/ ──────────────────────────┐
+│                                                               │
+│  accept loop ──▶ HTTPRequestQueue ──▶ worker thread pool      │
+│                  (bounded)                                    │
+│                  queue 포화 시 즉시 503 반환 (backpressure)   │
+│                                          │                    │
+│                              api_parse_http_request()         │
+│                                          │                    │
+│                              db_server_execute()   ← 경계     │
+│                              rwlock · metrics · timeout       │
+└───────────────────────────────────────────────────────────────┘
+                              │
+┌──────────────────── src/core/ ────────────────────────────────┐
+│  sql_execute() ──▶ Table ──▶ B+Tree                           │
+│  (lock 없음 — 순수 SQL 엔진)                                  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-가장 중요한 경계는 `db_server_execute()`입니다. 여러 worker가 같은 in-memory table을 공유하므로, 이 함수가 SQL 실행 전에 read/write lock을 잡고 metrics를 기록합니다. 반대로 `src/core/sql.c`, `src/core/table.c`, `src/core/bptree.c`는 lock을 모르는 순수 DB 엔진 영역으로 유지합니다.
+accept loop는 연결을 수락하자마자 소켓을 bounded queue에 넣고 다음 연결을 받으러 돌아갑니다. accept loop가 worker에게 직접 넘기지 않는 이유는 worker가 모두 바쁠 때 accept loop까지 블록되는 것을 막기 위해서입니다. queue가 가득 차면 accept loop가 즉시 `503 queue_full`을 돌려주므로, worker 수보다 많은 요청이 몰려도 서버는 계속 응답할 수 있습니다.
+
+worker thread pool은 고정 크기(`--workers`)입니다. 각 worker는 queue에서 소켓을 꺼내 HTTP 파싱부터 JSON 응답까지 한 요청을 끝까지 처리합니다.
+
+## 내부 DB 엔진과 외부 API 서버 경계
+
+가장 중요한 경계는 `db_server_execute()`입니다.
+
+```text
+SQL string (HTTP body)
+  → api_parse_http_request()   — HTTP 파싱, JSON 역직렬화
+  → db_server_execute()        — rwlock 획득, metrics 기록, timeout 처리
+  → sql_execute(Table *, sql)  — 순수 SQL 실행, SQLResult 반환
+  → api_serialize_*()          — SQLResult → JSON
+  → HTTP response
+```
+
+`src/core/`(`sql.c`, `table.c`, `bptree.c`)는 lock을 전혀 모릅니다. 이 설계를 선택한 이유는 두 가지입니다. 첫째, core가 동시성 정책에 의존하지 않으므로 단독 테스트와 CLI 재사용이 가능합니다. 둘째, lock 전략(rwlock 세분도, timeout, 공정성)을 바꾸더라도 core를 건드리지 않고 `db_server_execute()` 하나만 수정하면 됩니다.
+
+`db_server_execute()`는 SQL 종류에 따라 lock을 분기합니다.
+
+| SQL | lock 종류 | 이유 |
+|---|---|---|
+| `SELECT` | `pthread_rwlock_rdlock` | 읽기 전용이므로 다른 SELECT와 동시 실행 가능 |
+| `INSERT` | `pthread_rwlock_wrlock` | 테이블을 변경하므로 배타적 점유 필요 |
+
+lock 획득에는 `timedrdlock` / `timedwrlock`을 사용합니다. timeout(`--lock-timeout-ms`) 내에 lock을 얻지 못하면 SQL 실행 없이 `503 lock_timeout`을 반환합니다.
+
+## 멀티 스레드 동시성 이슈
+
+N개의 worker가 하나의 `Table *`를 동시에 읽고 쓰면 data race가 발생합니다. 구체적인 위험은 다음 세 가지입니다.
+
+| 시나리오 | 위험 |
+|---|---|
+| INSERT 중 SELECT | INSERT가 슬롯을 절반만 쓴 상태에서 SELECT가 읽으면 쓰레기값 반환 |
+| INSERT / INSERT 동시 | 두 worker가 같은 `next_id`를 읽고 같은 id에 쓰면 충돌 |
+| B+Tree 분할 중 탐색 | 노드 분할이 진행 중인 트리를 다른 worker가 순회하면 포인터 오염 |
+
+**해결: `pthread_rwlock_t`**
+
+mutex 대신 rwlock을 선택한 이유는 SELECT끼리는 data race가 없기 때문입니다. mutex는 SELECT/SELECT도 직렬화하지만 rwlock은 shared read lock으로 SELECT를 병렬 허용합니다. INSERT만 exclusive write lock으로 직렬화합니다.
+
+**Writer starvation 방지**
+
+기본 POSIX rwlock은 reader가 계속 유입되면 writer가 영원히 대기(writer starvation)할 수 있습니다. 이 프로젝트는 fair rwlock을 구현하여 write lock 요청이 들어오면 이후 신규 reader를 대기시켜 writer가 먼저 진입합니다.
+
+**Lock timeout**
+
+worker가 lock을 무한정 대기하면 요청이 쌓여 전체 서버가 멈춥니다. `timedrdlock` / `timedwrlock`으로 대기 상한을 두고, 초과 시 `503 lock_timeout`을 반환하여 client가 재시도를 결정합니다. `/metrics`의 `totalLockTimeouts`로 운영 중 발생 빈도를 관찰할 수 있습니다.
 
 ## 동시 요청 흐름
 
-아래 다이어그램은 `docs/alice-bob-concurrent-request-sequences.md`의 Alice/Bob 시나리오를 README용으로 줄인 버전입니다.
+lock 전략이 각 시나리오에서 어떻게 작동하는지 단계별로 보여줍니다. 자세한 Alice/Bob 시나리오는 `docs/alice-bob-concurrent-request-sequences.md`를 참고합니다.
 
 **1. 단일 요청 (SELECT 또는 INSERT)**
 
