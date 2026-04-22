@@ -1,3 +1,4 @@
+#include "api.h"
 #include "bptree.h"
 #include "db_server.h"
 #include "sql.h"
@@ -365,6 +366,7 @@ static void test_sql_detailed_errors(void) {
 static void test_db_server_shared_table_execution(void) {
     DBServer server;
     DBServerExecution execution;
+    DBServerMetrics metrics;
     int expected_ids[2];
 
     assert(db_server_init(&server) == 1);
@@ -407,6 +409,128 @@ static void test_db_server_shared_table_execution(void) {
     assert(execution.result.status == SQL_STATUS_EXIT);
     db_server_execution_destroy(&execution);
 
+    db_server_get_metrics(&server, &metrics);
+    assert(metrics.total_query_requests == 6);
+    assert(metrics.total_insert_requests == 2);
+    assert(metrics.total_select_requests == 3);
+    assert(metrics.total_not_found_results == 0);
+    assert(metrics.total_errors == 0);
+
+    db_server_destroy(&server);
+}
+
+typedef struct QueryThreadArgs {
+    DBServer *server;
+    const char *query;
+    DBServerExecution execution;
+    int executed;
+} QueryThreadArgs;
+
+static void *run_query_thread(void *raw_args) {
+    QueryThreadArgs *args = (QueryThreadArgs *)raw_args;
+
+    args->executed = db_server_execute(args->server, args->query, &args->execution);
+    return NULL;
+}
+
+static void test_db_server_lock_timeout_and_metrics(void) {
+    DBServer server;
+    DBServerConfig config;
+    DBServerExecution execution;
+    DBServerMetrics metrics;
+    PlatformThread thread;
+    QueryThreadArgs args;
+
+    db_server_config_default(&config);
+    config.lock_timeout_ms = 40;
+    config.simulate_write_delay_ms = 200;
+
+    assert(db_server_init_with_config(&server, &config) == 1);
+
+    memset(&args, 0, sizeof(args));
+    args.server = &server;
+    args.query = "INSERT INTO users VALUES ('Slow Writer', 99);";
+
+    assert(platform_thread_create(&thread, run_query_thread, &args) == 1);
+    platform_sleep_ms(40);
+
+    assert(db_server_execute(&server, "SELECT * FROM users;", &execution) == 1);
+    assert(execution.server_status == DB_SERVER_EXEC_STATUS_LOCK_TIMEOUT);
+    assert(execution.result.status == SQL_STATUS_ERROR);
+    db_server_execution_destroy(&execution);
+
+    assert(platform_thread_join(thread) == 1);
+    assert(args.executed == 1);
+    assert(args.execution.server_status == DB_SERVER_EXEC_STATUS_OK);
+    assert(args.execution.result.status == SQL_STATUS_OK);
+    db_server_execution_destroy(&args.execution);
+
+    db_server_record_health_request(&server);
+    db_server_record_metrics_request(&server);
+    db_server_record_queue_full(&server);
+
+    db_server_get_metrics(&server, &metrics);
+    assert(metrics.total_query_requests == 2);
+    assert(metrics.total_insert_requests == 1);
+    assert(metrics.total_select_requests == 1);
+    assert(metrics.total_health_requests == 1);
+    assert(metrics.total_metrics_requests == 1);
+    assert(metrics.total_queue_full == 1);
+    assert(metrics.total_lock_timeouts == 1);
+    assert(metrics.total_errors == 2);
+
+    db_server_destroy(&server);
+}
+
+static void test_api_http_contract(void) {
+    DBServer server;
+    DBServerExecution execution;
+    APIRequest request;
+    APIResponse response;
+    char raw_request[512];
+    char error_message[256];
+    char *rendered_response = NULL;
+    const char *body = "{\"query\":\"SELECT * FROM users WHERE id = 1;\"}";
+
+    snprintf(
+        raw_request,
+        sizeof(raw_request),
+        "POST /query HTTP/1.1\r\nHost: localhost\r\nContent-Length: %lu\r\n\r\n%s",
+        (unsigned long)strlen(body),
+        body
+    );
+
+    assert(api_parse_http_request(raw_request, &request, error_message, sizeof(error_message)) == 1);
+    assert(request.method == API_METHOD_POST);
+    assert(strcmp(request.path, "/query") == 0);
+    assert(strcmp(request.query, "SELECT * FROM users WHERE id = 1;") == 0);
+
+    assert(db_server_init(&server) == 1);
+    assert(db_server_execute(&server, "INSERT INTO users VALUES ('Alice', 20);", &execution) == 1);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "SELECT * FROM users WHERE id = 1;", &execution) == 1);
+    memset(&response, 0, sizeof(response));
+    assert(api_build_execution_response(&execution, &response) == 1);
+    assert(response.status_code == 200);
+    assert(strstr(response.body, "\"action\":\"select\"") != NULL);
+    assert(strstr(response.body, "\"usedIndex\":true") != NULL);
+    assert(strstr(response.body, "\"name\":\"Alice\"") != NULL);
+    assert(api_render_http_response(&response, &rendered_response) == 1);
+    assert(strstr(rendered_response, "HTTP/1.1 200 OK") != NULL);
+    free(rendered_response);
+    rendered_response = NULL;
+    api_response_destroy(&response);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "SELECT * FORM users;", &execution) == 1);
+    memset(&response, 0, sizeof(response));
+    assert(api_build_execution_response(&execution, &response) == 1);
+    assert(response.status_code == 400);
+    assert(strstr(response.body, "\"syntax_error\"") != NULL);
+    api_response_destroy(&response);
+    db_server_execution_destroy(&execution);
+
     db_server_destroy(&server);
 }
 
@@ -425,6 +549,8 @@ int main(void) {
     test_sql_execution();
     test_sql_detailed_errors();
     test_db_server_shared_table_execution();
+    test_db_server_lock_timeout_and_metrics();
+    test_api_http_contract();
 
     printf("All unit tests passed.\n");
     return 0;

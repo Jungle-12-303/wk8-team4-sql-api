@@ -1,19 +1,35 @@
 #include "db_server.h"
+#include "http_server.h"
 
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void server_print_usage(const char *program_name) {
     printf("Usage:\n");
     printf("  %s --query \"SQL\" [--query \"SQL\" ...]\n", program_name);
+    printf("  %s --serve [--port 8080] [--workers 4] [--queue 16]\n", program_name);
     printf("  %s\n", program_name);
     printf("\n");
-    printf("Without --query, the server reads one SQL statement per line from stdin.\n");
+    printf("CLI mode reads one SQL statement per line from stdin when --query is omitted.\n");
+    printf("HTTP mode enables GET /health, GET /metrics, and POST /query.\n");
+}
+
+static int server_parse_unsigned(const char *value, unsigned long *parsed) {
+    char *end_ptr;
+
+    *parsed = strtoul(value, &end_ptr, 10);
+    return end_ptr != value && *end_ptr == '\0';
 }
 
 static int server_print_execution(const DBServerExecution *execution) {
     size_t index;
+
+    if (execution->server_status == DB_SERVER_EXEC_STATUS_LOCK_TIMEOUT) {
+        printf("ERROR type=lock_timeout message=%s\n", execution->message);
+        return 1;
+    }
 
     if (execution->result.status == SQL_STATUS_OK) {
         if (execution->result.action == SQL_ACTION_INSERT) {
@@ -92,45 +108,144 @@ static int server_run_stdin(DBServer *server) {
 
 int main(int argc, char **argv) {
     DBServer server;
+    DBServerConfig cli_config;
+    HTTPServerOptions http_options;
+    int serve_mode = 0;
+    int has_query_argument = 0;
     int index;
 
-    if (!db_server_init(&server)) {
-        fprintf(stderr, "Failed to create shared table for server bootstrap.\n");
-        return 1;
-    }
-
-    if (argc == 1) {
-        index = server_run_stdin(&server) ? 0 : 1;
-        db_server_destroy(&server);
-        return index;
-    }
+    db_server_config_default(&cli_config);
+    http_server_options_default(&http_options);
 
     for (index = 1; index < argc; index++) {
+        unsigned long parsed = 0;
+
         if (strcmp(argv[index], "--help") == 0) {
             server_print_usage(argv[0]);
-            db_server_destroy(&server);
             return 0;
+        }
+
+        if (strcmp(argv[index], "--serve") == 0) {
+            serve_mode = 1;
+            continue;
         }
 
         if (strcmp(argv[index], "--query") == 0) {
             index++;
             if (index >= argc) {
                 fprintf(stderr, "--query requires a SQL string.\n");
-                db_server_destroy(&server);
                 return 1;
             }
+            has_query_argument = 1;
+            continue;
+        }
 
-            if (!server_run_query(&server, argv[index])) {
-                db_server_destroy(&server);
-                return 0;
+        if (strcmp(argv[index], "--port") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed) || parsed > 65535UL) {
+                fprintf(stderr, "--port requires a valid number between 0 and 65535.\n");
+                return 1;
             }
+            http_options.port = (unsigned short)parsed;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--workers") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed) || parsed == 0UL) {
+                fprintf(stderr, "--workers requires a positive integer.\n");
+                return 1;
+            }
+            http_options.worker_count = (size_t)parsed;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--queue") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed) || parsed == 0UL) {
+                fprintf(stderr, "--queue requires a positive integer.\n");
+                return 1;
+            }
+            http_options.queue_capacity = (size_t)parsed;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--lock-timeout-ms") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed)) {
+                fprintf(stderr, "--lock-timeout-ms requires a non-negative integer.\n");
+                return 1;
+            }
+            cli_config.lock_timeout_ms = (unsigned int)parsed;
+            http_options.lock_timeout_ms = (unsigned int)parsed;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--simulate-read-delay-ms") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed)) {
+                fprintf(stderr, "--simulate-read-delay-ms requires a non-negative integer.\n");
+                return 1;
+            }
+            cli_config.simulate_read_delay_ms = (unsigned int)parsed;
+            http_options.simulate_read_delay_ms = (unsigned int)parsed;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--simulate-write-delay-ms") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed)) {
+                fprintf(stderr, "--simulate-write-delay-ms requires a non-negative integer.\n");
+                return 1;
+            }
+            cli_config.simulate_write_delay_ms = (unsigned int)parsed;
+            http_options.simulate_write_delay_ms = (unsigned int)parsed;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--max-requests") == 0) {
+            index++;
+            if (index >= argc || !server_parse_unsigned(argv[index], &parsed)) {
+                fprintf(stderr, "--max-requests requires a non-negative integer.\n");
+                return 1;
+            }
+            http_options.max_requests = (unsigned int)parsed;
             continue;
         }
 
         fprintf(stderr, "Unknown argument: %s\n", argv[index]);
         server_print_usage(argv[0]);
-        db_server_destroy(&server);
         return 1;
+    }
+
+    if (serve_mode && has_query_argument) {
+        fprintf(stderr, "--serve cannot be combined with --query.\n");
+        return 1;
+    }
+
+    if (serve_mode) {
+        return http_server_run(&http_options);
+    }
+
+    if (!db_server_init_with_config(&server, &cli_config)) {
+        fprintf(stderr, "Failed to create shared table for server bootstrap.\n");
+        return 1;
+    }
+
+    if (argc == 1 || !has_query_argument) {
+        index = server_run_stdin(&server) ? 0 : 1;
+        db_server_destroy(&server);
+        return index;
+    }
+
+    for (index = 1; index < argc; index++) {
+        if (strcmp(argv[index], "--query") == 0) {
+            index++;
+            if (!server_run_query(&server, argv[index])) {
+                db_server_destroy(&server);
+                return 0;
+            }
+        }
     }
 
     db_server_destroy(&server);
