@@ -486,11 +486,16 @@ flowchart TB
 
 ## 10. HTTP 요청 하나가 실제로 처리되는 길
 
-`POST /query` 하나를 예로 보면 아래와 같다.
+`POST /query`는 `http_server_handle_client()`까지는 같은 길로 들어온다. 이후 `request.query` 문자열이 `INSERT`인지 `SELECT`인지에 따라 `db_server_execute()` 안에서 lock 종류와 table 함수 호출이 달라진다.
+
+아래 diagram은 실제 코드의 함수 이름과 대표 파라미터를 그대로 써서 그린 것이다.
+
+### INSERT 요청
 
 ```mermaid
 sequenceDiagram
     participant C as Client
+    participant W as worker thread
     participant H as http_server.c
     participant A as api.c
     participant D as db_server.c
@@ -498,22 +503,96 @@ sequenceDiagram
     participant T as table.c
     participant B as bptree.c
 
-    C->>H: POST /query {"query":"SELECT * FROM users WHERE id = 1;"}
-    H->>H: recv()로 HTTP 요청 읽기
-    H->>A: api_parse_http_request()
-    A-->>H: APIRequest{method,path,query}
-    H->>D: db_server_execute(query)
-    D->>D: SELECT라서 read lock 시도
-    D->>S: sql_execute(table, query)
-    S->>T: table_find_by_id_condition()
-    T->>B: bptree_search()
-    B-->>T: Record*
-    T-->>S: Record** results
+    C->>H: TCP connection request to server port
+    H->>H: http_server_socket_wait_for_read(listen_socket, 200)
+    H->>H: accept(listen_socket, NULL, NULL)
+    H->>H: http_request_queue_push(&context.queue, client_socket)
+    W->>H: http_request_queue_pop(&context->queue)
+    H-->>W: client_socket
+    W->>H: http_server_handle_client(context, client_socket)
+    C->>H: POST /query body.query = "INSERT INTO users VALUES ('Alice', 20);"
+    H->>H: http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))
+    H->>A: api_parse_http_request(request_buffer, &request, error_message, sizeof(error_message))
+    A-->>H: request.method = API_METHOD_POST, request.path = "/query", request.query = "INSERT INTO users VALUES ('Alice', 20);"
+    H->>D: db_server_execute(&context->db_server, request.query, &execution)
+    D->>D: db_server_classify_query(request.query) -> DB_SERVER_QUERY_KIND_WRITE
+    D->>D: db_server_guess_uses_index(request.query) -> 0
+    D->>D: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_WRITE)
+    D->>D: db_server_try_acquire_lock(server, DB_SERVER_QUERY_KIND_WRITE)
+    D->>D: platform_rwlock_try_write_lock(&server->db_lock)
+    D->>S: sql_execute(server->table, "INSERT INTO users VALUES ('Alice', 20);")
+    S->>S: sql_execute_insert(table, input)
+    S->>T: table_insert(table, "Alice", 20)
+    T->>B: bptree_insert(table->pk_index, record->id, record)
+    B-->>T: 1
+    T-->>S: Record* record, record->id = 1
     S-->>D: SQLResult
-    D-->>H: DBServerExecution
-    H->>A: api_build_execution_response()
-    A-->>H: JSON body
-    H->>C: HTTP/1.1 200 OK + JSON
+    D->>D: db_server_release_lock(server, DB_SERVER_QUERY_KIND_WRITE)
+    D->>D: db_server_metrics_query_finished(server, &execution)
+    D-->>H: execution.result.action = SQL_ACTION_INSERT, execution.result.inserted_id = 1
+    H->>A: api_build_execution_response(&execution, &response)
+    A-->>H: response.status_code = 200, body = {"ok":true,"status":"ok","action":"insert","insertedId":1,"usedIndex":false}
+    H->>H: http_server_send_response(client_socket, &response)
+    H->>A: api_render_http_response(&response, &raw_response)
+    H->>H: http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))
+    H-->>C: HTTP/1.1 200 OK + JSON insert result
+    H->>D: db_server_execution_destroy(&execution)
+    H->>A: api_response_destroy(&response)
+```
+
+이 INSERT 흐름에서 가장 중요한 실제 파라미터는 `table_insert(table, "Alice", 20)`이다. `id`는 요청 body에 없고, `table_insert()` 안에서 `record->id = table->next_id++`로 자동 생성된다.
+
+### SELECT 요청
+
+아래 예시는 바로 위 INSERT로 `id = 1`인 `Alice` row가 이미 들어간 뒤의 요청이다.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant W as worker thread
+    participant H as http_server.c
+    participant A as api.c
+    participant D as db_server.c
+    participant S as sql.c
+    participant T as table.c
+    participant B as bptree.c
+
+    C->>H: TCP connection request to server port
+    H->>H: http_server_socket_wait_for_read(listen_socket, 200)
+    H->>H: accept(listen_socket, NULL, NULL)
+    H->>H: http_request_queue_push(&context.queue, client_socket)
+    W->>H: http_request_queue_pop(&context->queue)
+    H-->>W: client_socket
+    W->>H: http_server_handle_client(context, client_socket)
+    C->>H: POST /query body.query = "SELECT * FROM users WHERE id = 1;"
+    H->>H: http_server_read_request(client_socket, request_buffer, sizeof(request_buffer), error_message, sizeof(error_message))
+    H->>A: api_parse_http_request(request_buffer, &request, error_message, sizeof(error_message))
+    A-->>H: request.method = API_METHOD_POST, request.path = "/query", request.query = "SELECT * FROM users WHERE id = 1;"
+    H->>D: db_server_execute(&context->db_server, request.query, &execution)
+    D->>D: db_server_classify_query(request.query) -> DB_SERVER_QUERY_KIND_READ
+    D->>D: db_server_guess_uses_index(request.query) -> 1
+    D->>D: db_server_metrics_query_started(server, DB_SERVER_QUERY_KIND_READ)
+    D->>D: db_server_try_acquire_lock(server, DB_SERVER_QUERY_KIND_READ)
+    D->>D: platform_rwlock_try_read_lock(&server->db_lock)
+    D->>S: sql_execute(server->table, "SELECT * FROM users WHERE id = 1;")
+    S->>S: sql_execute_select(table, input)
+    S->>T: table_find_by_id_condition(table, TABLE_COMPARISON_EQ, 1, &result.records, &result.row_count)
+    T->>T: table_find_by_id(table, 1)
+    T->>B: bptree_search(table->pk_index, 1)
+    B-->>T: Record* Alice
+    T-->>S: result.records[0] = Record{id=1,name="Alice",age=20}, result.row_count = 1
+    S-->>D: SQLResult
+    D->>D: db_server_release_lock(server, DB_SERVER_QUERY_KIND_READ)
+    D->>D: db_server_metrics_query_finished(server, &execution)
+    D-->>H: execution.used_index = 1, execution.result.action = SQL_ACTION_SELECT_ROWS
+    H->>A: api_build_execution_response(&execution, &response)
+    A-->>H: response.status_code = 200, body = {"ok":true,"status":"ok","action":"select","rowCount":1,"usedIndex":true,"rows":[{"id":1,"name":"Alice","age":20}]}
+    H->>H: http_server_send_response(client_socket, &response)
+    H->>A: api_render_http_response(&response, &raw_response)
+    H->>H: http_server_socket_send_all(client_socket, raw_response, strlen(raw_response))
+    H-->>C: HTTP/1.1 200 OK + JSON select result
+    H->>D: db_server_execution_destroy(&execution)
+    H->>A: api_response_destroy(&response)
 ```
 
 초기 커밋에서는 `Client`, `http_server.c`, `api.c`, `db_server.c`가 없었다. 최신 커밋은 기존 `sql.c -> table.c -> bptree.c` 앞뒤에 서버용 입출력 계층을 붙인 것이다.
