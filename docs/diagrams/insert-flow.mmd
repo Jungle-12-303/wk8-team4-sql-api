@@ -1,0 +1,33 @@
+flowchart TD
+    Input["INSERT INTO users VALUES ('Alice', 20);"] --> Exec["sql_execute()"]
+    Exec --> Parse["sql_execute_insert()"]
+    Parse --> Insert["table_insert()"]
+
+    Insert --> Capacity{"rows array has room?"}
+    Capacity -->|"No"| Grow["table_ensure_capacity()"]
+    Capacity -->|"Yes"| NewRecord["Allocate Record\nassign next_id++"]
+    Grow --> NewRecord
+
+    NewRecord --> SaveRows["rows[size] = record"]
+    NewRecord --> Index["bptree_insert(pk_index, id, record)"]
+    SaveRows --> Index
+
+    Index --> Empty{"Tree is empty?"}
+    Empty -->|"Yes"| FirstLeaf["Create first leaf root\nstore key/value"]
+    Empty -->|"No"| FindLeaf["bptree_find_leaf(id)"]
+
+    FindLeaf --> Room{"Target leaf has room?"}
+    Room -->|"Yes"| InsertLeaf["bptree_insert_into_leaf()"]
+    Room -->|"No"| SplitLeaf["bptree_split_leaf_and_insert()"]
+
+    SplitLeaf --> ParentFull{"Parent full too?"}
+    ParentFull -->|"No"| InsertParent["bptree_insert_into_parent()"]
+    ParentFull -->|"Yes"| SplitInternal["bptree_split_internal_and_insert()"]
+    SplitInternal --> NewRoot{"Split reaches root?"}
+    NewRoot -->|"Yes"| CreateRoot["bptree_create_new_root()"]
+    NewRoot -->|"No"| Done["SQL_STATUS_OK\ninserted_id set"]
+
+    FirstLeaf --> Done
+    InsertLeaf --> Done
+    InsertParent --> Done
+    CreateRoot --> Done

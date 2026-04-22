@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="340" viewBox="0 0 1160 340">
+  <style>
+    .frame { fill: #111827; stroke: #334155; stroke-width: 2; }
+    .title { fill: #e5e7eb; font: 600 20px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+    .line { fill: #d1d5db; font: 18px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+    .accent { stroke: #ef4444; stroke-width: 3; stroke-linecap: round; }
+  </style>
+  <rect width="1160" height="340" fill="#0b1020"/>
+  <rect x="24" y="24" width="1112" height="292" rx="16" class="frame"/>
+  <circle cx="52" cy="49" r="7" fill="#ef4444"/>
+  <circle cx="76" cy="49" r="7" fill="#f59e0b"/>
+  <circle cx="100" cy="49" r="7" fill="#22c55e"/>
+  <text x="126" y="55" class="title">./perf_test  local run  2026-04-16</text>
+  <text x="48" y="98" class="line" xml:space="preserve">perf_test (1000000 rows, 1000 id lookups)</text>
+  <text x="48" y="126" class="line" xml:space="preserve">+-----------------+-----------+-----------+</text>
+  <text x="48" y="154" class="line" xml:space="preserve">| Method          | Avg. Rows | Time (ms) |</text>
+  <text x="48" y="182" class="line" xml:space="preserve">+-----------------+-----------+-----------+</text>
+  <text x="48" y="210" class="line" xml:space="preserve">| B+Tree ID Lookup|      1.00 |     0.586 |</text>
+  <text x="48" y="238" class="line" xml:space="preserve">| Rows ID Scan    |      1.00 |   131.035 |</text>
+  <text x="48" y="266" class="line" xml:space="preserve">+-----------------+-----------+-----------+</text>
+  <text x="48" y="294" class="line" xml:space="preserve">Speedup: 223.63x</text>
+  <line x1="140" y1="302" x2="220" y2="302" class="accent"/>
+</svg>

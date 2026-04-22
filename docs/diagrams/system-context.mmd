@@ -1,0 +1,42 @@
+flowchart LR
+    User[User]
+    REPL["main.c REPL loop"]
+    Exec["sql_execute()"]
+    Insert["sql_execute_insert()"]
+    Select["sql_execute_select()"]
+    TableInsert["table_insert()"]
+    CollectAll["table_collect_all()"]
+    IdCond["table_find_by_id_condition()"]
+    NameCond["table_find_by_name_matches()"]
+    AgeCond["table_find_by_age_condition()"]
+    Rows["Table.rows Record array"]
+    Tree["B+ Tree pk_index"]
+    Result["SQLResult"]
+    Output["printed output"]
+
+    User --> REPL
+    REPL --> Exec
+
+    Exec -->|INSERT| Insert
+    Insert --> TableInsert
+    TableInsert --> Rows
+    TableInsert --> Tree
+
+    Exec -->|SELECT| Select
+    Select -->|SELECT *| CollectAll
+    CollectAll --> Result
+
+    Select -->|WHERE id| IdCond
+    IdCond --> Tree
+    Tree --> Result
+
+    Select -->|WHERE name| NameCond
+    NameCond --> Rows
+    Rows --> Result
+
+    Select -->|WHERE age| AgeCond
+    AgeCond --> Rows
+
+    Result --> REPL
+    REPL --> Output
+    Output --> User

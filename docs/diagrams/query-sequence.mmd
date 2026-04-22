@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant U as User
+    participant M as main.c
+    participant S as sql.c
+    participant T as table.c
+    participant B as B+ Tree
+
+    U->>M: SELECT * FROM users WHERE id >= 10;
+    M->>S: sql_execute(table, input)
+    S->>S: parse SELECT / WHERE / comparison
+    S->>T: table_find_by_id_condition(table, >=, 10)
+    T->>B: table_find_id_leaf(10)
+    B-->>T: start leaf
+    T->>B: follow leaf.next chain
+    B-->>T: matching Record* pointers
+    T-->>S: records[] + row_count
+    S-->>M: SQLResult{status=OK, action=SELECT_ROWS}
+
+    alt row_count > 0
+        M->>T: table_print_records(records, row_count)
+        T-->>U: id=..., name=..., age=...
+    else row_count == 0
+        M-->>U: Not found
+    end
+
+    M->>S: sql_result_destroy(&result)

@@ -1,0 +1,14 @@
+flowchart TB
+    Root["Internal node\nkeys: [30 | 70]"]
+
+    L1["Leaf\n[10 | 20]\nvalue -> Record*"]
+    L2["Leaf\n[30 | 50]\nvalue -> Record*"]
+    L3["Leaf\n[70 | 90]\nvalue -> Record*"]
+
+    Root --> L1
+    Root --> L2
+    Root --> L3
+
+    L1 -. next .-> L2
+    L2 -. next .-> L3
+

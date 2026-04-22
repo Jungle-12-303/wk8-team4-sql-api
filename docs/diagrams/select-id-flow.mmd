@@ -1,0 +1,36 @@
+flowchart TD
+    Input["SELECT * FROM users WHERE id >= 10;"] --> Exec["sql_execute()"]
+    Exec --> Parse["sql_execute_select()"]
+    Parse --> WholeSelect{"SELECT * FROM users only?"}
+
+    WholeSelect -->|"Yes"| CollectAll["table_collect_all()"]
+    WholeSelect -->|"No"| Where["Parse WHERE column + comparison + value"]
+
+    Where --> Column{"column?"}
+    Column -->|"id"| IdCond["table_find_by_id_condition()"]
+    Column -->|"name"| NameComp{"comparison == = ?"}
+    Column -->|"age"| AgeCond["table_find_by_age_condition()"]
+    Column -->|"other"| QueryErr["1054 unknown column"]
+
+    NameComp -->|"Yes"| NameMatch["table_find_by_name_matches()"]
+    NameComp -->|"No"| SyntaxErr["1064 syntax error"]
+
+    IdCond --> IdMode{"comparison?"}
+    IdMode -->|"="| IdOne["table_find_by_id()\nbptree_search()"]
+    IdMode -->|"> / >="| RightRange["find target leaf\nfollow leaf.next chain"]
+    IdMode -->|"< / <="| LeftRange["start at leftmost leaf\nstop when key fails"]
+
+    CollectAll --> Result["SQLResult\nrecords + row_count + status"]
+    NameMatch --> Result
+    AgeCond --> Result
+    IdOne --> Result
+    RightRange --> Result
+    LeftRange --> Result
+    QueryErr --> Result
+    SyntaxErr --> Result
+
+    Result --> Output{"main.c output"}
+    Output -->|"OK"| Print["table_print_records()"]
+    Output -->|"NOT_FOUND"| NotFound["Print Not found"]
+    Output -->|"error_message"| Detail["Print detailed SQL error"]
+    Output -->|"ERROR"| Fail["Print Execution error"]
