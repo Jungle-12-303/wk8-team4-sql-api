@@ -1,6 +1,6 @@
 # HTTP Smoke Test Guide
 
-이 문서는 Docker 기반 Linux 환경에서 HTTP smoke 검증을 어떻게 돌릴지 빠르게 정리한 가이드입니다.
+이 문서는 팀 로컬 환경에서 `server.exe` 기반 smoke 검증을 어떻게 돌릴지 빠르게 정리한 가이드입니다.
 
 ## 목적
 
@@ -13,28 +13,34 @@
 
 ## 준비
 
-먼저 Docker Compose로 서버 이미지를 빌드하고 실행합니다.
+먼저 바이너리를 빌드합니다.
 
 ```bash
-docker compose up --build sql-api
+make server
+```
+
+Windows MinGW에서 `make`가 없으면 아래처럼 실행합니다.
+
+```bash
+mingw32-make server
+```
+
+직접 컴파일도 가능합니다.
+
+```bash
+mkdir -p build/bin
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Isrc/core -Isrc/server -o build/bin/server.exe src/server/server.c src/server/http_server.c src/server/db_server.c src/server/api.c src/server/platform.c src/core/bptree.c src/core/table.c src/core/sql.c -lws2_32
 ```
 
 ## 1차 smoke: 정상/에러/metrics
 
-다른 터미널에서 아래 요청을 보냅니다.
+아래 스크립트를 실행합니다.
 
-```bash
-curl http://127.0.0.1:8080/health
-curl -X POST http://127.0.0.1:8080/query \
-  -H "Content-Type: application/json" \
-  -d "{\"query\":\"INSERT INTO users VALUES ('Alice', 20);\"}"
-curl -X POST http://127.0.0.1:8080/query \
-  -H "Content-Type: application/json" \
-  -d "{\"query\":\"SELECT * FROM users WHERE id = 1;\"}"
-curl http://127.0.0.1:8080/metrics
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tests\smoke\server_http_smoke_test.ps1
 ```
 
-이 단계에서는 아래를 확인합니다.
+스크립트 1단계에서는 아래를 확인합니다.
 
 - `GET /health`가 `200`으로 뜨는지
 - `POST /query` INSERT가 성공하는지
@@ -47,14 +53,11 @@ curl http://127.0.0.1:8080/metrics
 
 ## 2차 smoke: queue_full
 
-queue 포화를 확인하려면 서버를 아래 설정으로 다시 띄웁니다.
+같은 스크립트의 2단계에서는 아래 설정으로 서버를 띄웁니다.
 
-```bash
-docker compose down
-docker build -t mini-dbms-sql-api .
-docker run --rm -p 8080:8080 mini-dbms-sql-api \
-  --serve --port 8080 --workers 1 --queue 1 --simulate-read-delay-ms 300
-```
+- worker 1개
+- queue 1개
+- read delay 300ms
 
 그 다음 동시에 여러 `SELECT`를 보내서 아래를 확인합니다.
 
@@ -63,38 +66,39 @@ docker run --rm -p 8080:8080 mini-dbms-sql-api \
 
 이 단계는 "bounded queue가 실제로 걸리는지"를 확인하는 데 목적이 있습니다.
 
-## 정리
+## 기대 결과
 
-검증이 끝나면 아래 명령으로 정리합니다.
+정상 종료되면 아래 메시지가 출력됩니다.
 
-```bash
-docker compose down
+```text
+server HTTP smoke test passed.
 ```
 
 ## 실패할 때 먼저 볼 것
 
-### 1. Docker가 실행 중이지 않음
+### 1. `build\bin\server.exe not found`
 
-- Docker Desktop 또는 Docker Engine이 올라와 있는지 먼저 확인합니다.
-- `docker compose up --build sql-api`가 바로 실패하면 Docker daemon 상태를 먼저 확인합니다.
+- 바이너리를 아직 빌드하지 않은 경우입니다.
+- `make server` 또는 직접 `gcc` 빌드를 먼저 실행합니다.
 
 ### 2. 포트 충돌
 
-- 기본 예시는 `8080` 포트를 사용합니다.
-- 이미 같은 포트를 누가 쓰고 있으면 `-p 18080:8080`처럼 다른 호스트 포트로 바꿉니다.
+- 기본 스크립트는 `18080`, `18081` 포트를 사용합니다.
+- 이미 같은 포트를 누가 쓰고 있으면 다른 프로세스를 정리하거나 스크립트 포트를 바꿉니다.
 
-### 3. `queue_full` 재현이 안 됨
+### 3. `server.exe` 실행이 정책에 막힘
 
-- `--workers 1 --queue 1 --simulate-read-delay-ms 300`처럼 의도적으로 작은 설정을 써야 재현이 쉽습니다.
-- 동시에 보내는 요청 수가 너무 적으면 모두 정상 응답으로 끝날 수 있습니다.
+- 일부 회사/실습 환경에서는 Device Guard / App Control 정책 때문에 새로 만든 `.exe` 실행이 막힐 수 있습니다.
+- 이 경우 코드 문제라기보다 실행 정책 문제일 가능성이 큽니다.
+- 팀원 PC나 정책이 없는 환경에서 다시 확인해 보면 보통 바로 재현됩니다.
 
 ## 발표 전에 추천하는 최종 체크
 
 아래 순서로 한 번만 통과시키면 시연 안정성이 많이 올라갑니다.
 
-1. `docker compose --profile test run --rm unit-test` 통과
-2. `docker compose up --build sql-api`로 서버 기동 확인
-3. `curl`로 `GET /health`, `GET /metrics`, `POST /query`를 직접 확인
-4. 필요하면 Postman collection으로 edge/burst 시나리오를 한 번 더 확인
+1. `build/bin/unit_test` 통과
+2. `tests/smoke/server_cli_smoke_test.ps1` 통과
+3. `tests/smoke/server_http_smoke_test.ps1` 통과
+4. `curl`로 `GET /health`, `GET /metrics`, `POST /query`를 직접 한 번 더 확인
 
 이 순서가 좋은 이유는, 엔진 회귀와 서버 회귀를 따로 보다가 마지막에 end-to-end를 한 번 더 확인할 수 있기 때문입니다.
