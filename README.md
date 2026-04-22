@@ -62,55 +62,131 @@ client
 
 아래 다이어그램은 `docs/alice-bob-concurrent-request-sequences.md`의 Alice/Bob 시나리오를 README용으로 줄인 버전입니다.
 
+**1. 단일 요청 (SELECT 또는 INSERT)**
+
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Alice as "Alice client"
-    participant Bob as "Bob client"
+    participant C as "client"
     participant A as "accept loop"
     participant Q as "HTTPRequestQueue"
+    participant W as "worker"
+    participant DB as "db_server_execute()"
+    participant Core as "sql_execute()"
+
+    C->>A: TCP connect + POST /query
+    A->>Q: push socket
+    Q-->>W: pop socket
+    W->>W: recv() and parse request
+    W->>DB: execute SQL
+    DB->>DB: acquire lock (read or write)
+    DB->>Core: run SQL
+    Core-->>DB: SQLResult
+    DB-->>W: DBServerExecution
+    W-->>C: HTTP 200 JSON
+```
+
+**2. SELECT / SELECT (동시 읽기)**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice as "Alice (SELECT)"
+    participant Bob as "Bob (SELECT)"
     participant WA as "worker A"
     participant WB as "worker B"
     participant DB as "db_server_execute()"
-    participant Core as "sql_execute()<br/>Table / B+Tree"
-    participant API as "api.c"
+    participant Core as "sql_execute()"
 
-    Alice->>A: TCP connect + POST /query
-    Bob->>A: TCP connect + POST /query
-    alt queue has capacity
-        A->>Q: push Alice socket
-        A->>Q: push Bob socket
-        Q-->>WA: pop Alice socket
-        Q-->>WB: pop Bob socket
-
-        par HTTP parse
-            WA->>WA: recv() and parse request
-        and HTTP parse
-            WB->>WB: recv() and parse request
-        end
-
-        WA->>DB: execute Alice SQL
-        WB->>DB: execute Bob SQL
-
-        alt lock acquired
-            alt SELECT / SELECT
-                DB->>DB: shared read locks
-                DB->>Core: run SELECT paths
-            else INSERT involved
-                DB->>DB: exclusive write turn
-                DB->>Core: run SQL in lock order
-            end
-            Core-->>DB: SQLResult
-            DB-->>API: DBServerExecution
-        else lock wait exceeds timeout
-            DB-->>API: lock_timeout
-        end
-
-        API-->>Alice: HTTP JSON response
-        API-->>Bob: HTTP JSON response
-    else queue is full
-        A-->>Alice: HTTP 503 queue_full
+    par 병렬 수신·파싱
+        Alice->>WA: recv() + parse
+    and
+        Bob->>WB: recv() + parse
     end
+
+    par read lock 동시 획득
+        WA->>DB: execute SELECT
+        DB->>DB: rdlock 획득
+    and
+        WB->>DB: execute SELECT
+        DB->>DB: rdlock 획득
+    end
+
+    par 동시 실행
+        DB->>Core: SELECT (Alice)
+        Core-->>WA: result
+        WA-->>Alice: HTTP 200 JSON
+    and
+        DB->>Core: SELECT (Bob)
+        Core-->>WB: result
+        WB-->>Bob: HTTP 200 JSON
+    end
+```
+
+**3. INSERT / INSERT (직렬 쓰기)**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice as "Alice (INSERT)"
+    participant Bob as "Bob (INSERT)"
+    participant WA as "worker A"
+    participant WB as "worker B"
+    participant DB as "db_server_execute()"
+    participant Core as "sql_execute()"
+
+    par 병렬 수신·파싱
+        Alice->>WA: recv() + parse
+    and
+        Bob->>WB: recv() + parse
+    end
+
+    WA->>DB: execute INSERT
+    DB->>DB: wrlock 획득 (Alice 선점)
+    Note over WB,DB: Bob은 wrlock 대기 중
+    DB->>Core: INSERT (Alice)
+    Core-->>WA: result
+    WA-->>Alice: HTTP 200 JSON
+    DB->>DB: wrlock 해제
+
+    WB->>DB: execute INSERT
+    DB->>DB: wrlock 획득 (Bob 진입)
+    DB->>Core: INSERT (Bob)
+    Core-->>WB: result
+    WB-->>Bob: HTTP 200 JSON
+```
+
+**4. INSERT / SELECT (쓰기·읽기 충돌)**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice as "Alice (INSERT)"
+    participant Bob as "Bob (SELECT)"
+    participant WA as "worker A"
+    participant WB as "worker B"
+    participant DB as "db_server_execute()"
+    participant Core as "sql_execute()"
+
+    par 병렬 수신·파싱
+        Alice->>WA: recv() + parse
+    and
+        Bob->>WB: recv() + parse
+    end
+
+    WA->>DB: execute INSERT
+    DB->>DB: wrlock 획득 (Alice 선점)
+    Note over WB,DB: Bob은 rdlock 대기 중 (wrlock과 충돌)
+    DB->>Core: INSERT (Alice)
+    Core-->>WA: result
+    WA-->>Alice: HTTP 200 JSON
+    DB->>DB: wrlock 해제
+
+    WB->>DB: execute SELECT
+    DB->>DB: rdlock 획득 (Bob 진입)
+    DB->>Core: SELECT (Bob)
+    Core-->>WB: result
+    WB-->>Bob: HTTP 200 JSON
 ```
 
 동시성 규칙은 단순합니다.
