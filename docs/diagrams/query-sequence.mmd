@@ -5,22 +5,22 @@ sequenceDiagram
     participant T as table.c
     participant B as B+ Tree
 
-    U->>M: SELECT * FROM users WHERE id >= 10;
-    M->>S: sql_execute(table, input)
-    S->>S: parse SELECT / WHERE / comparison
-    S->>T: table_find_by_id_condition(table, >=, 10)
-    T->>B: table_find_id_leaf(10)
-    B-->>T: start leaf
-    T->>B: follow leaf.next chain
-    B-->>T: matching Record* pointers
-    T-->>S: records[] + row_count
-    S-->>M: SQLResult{status=OK, action=SELECT_ROWS}
+    U->>M: SELECT * FROM users<br/>WHERE id >= 10;
+    M->>S: sql_execute(<br/>table, input)
+    S->>S: parse query<br/>and WHERE clause
+    S->>T: table_find_by_id_<br/>condition(<br/>table, >=, 10)
+    T->>B: table_find_id_leaf(<br/>10)
+    B-->>T: return start leaf
+    T->>B: scan leaf.next<br/>chain
+    B-->>T: matching<br/>Record*
+    T-->>S: matching rows<br/>+ row_count
+    S-->>M: SQLResult<br/>{OK, SELECT_ROWS}
 
     alt row_count > 0
-        M->>T: table_print_records(records, row_count)
-        T-->>U: id=..., name=..., age=...
+        M->>T: table_print_records(<br/>records,<br/>row_count)
+        T-->>U: render matching rows<br/>id, name, age
     else row_count == 0
         M-->>U: Not found
     end
 
-    M->>S: sql_result_destroy(&result)
+    M->>S: sql_result_destroy(<br/>&result)

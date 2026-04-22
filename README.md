@@ -38,7 +38,7 @@ client
 
 전체 요청 흐름을 시퀀스로 보면 아래와 같습니다.
 
-![Project request sequence](docs/images/server-request-sequence.svg)
+![Project request sequence](./docs/images/server-request-sequence.svg)
 
 구성 파일은 아래처럼 나뉩니다.
 

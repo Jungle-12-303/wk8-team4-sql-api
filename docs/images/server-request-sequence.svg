@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="1940" viewBox="0 0 1160 1940" role="img" aria-labelledby="title desc">
+  <title id="title">Project request sequence</title>
+  <desc id="desc">Readable sequence diagram for a SELECT request moving through main.c, sql.c, table.c, and the B+ Tree before returning rows or Not found to the user.</desc>
+
+  <defs>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-violet" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-slate" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 z" fill="#475569"/>
+    </marker>
+    <style>
+      .title { font: 700 30px Arial, Helvetica, sans-serif; fill: #0f172a; }
+      .subtitle { font: 15px Arial, Helvetica, sans-serif; fill: #475569; }
+      .participant { font: 700 20px Arial, Helvetica, sans-serif; fill: #0f172a; }
+      .pill { font: 700 14px Arial, Helvetica, sans-serif; fill: #0f172a; }
+      .label { font: 600 13.5px "Courier New", Consolas, monospace; fill: #0f172a; }
+      .note { font: 600 15px Arial, Helvetica, sans-serif; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1160" height="1940" fill="#f8fafc"/>
+  <rect x="24" y="24" width="1112" height="1892" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+
+  <text x="56" y="66" class="title">Project request sequence</text>
+  <text x="56" y="96" class="subtitle">Readable view of docs/diagrams/query-sequence.mmd with wider spacing, wrapped labels, and clearer success / empty-result branches.</text>
+
+  <rect x="52" y="130" width="176" height="60" rx="18" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+  <rect x="282" y="130" width="176" height="60" rx="18" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2"/>
+  <rect x="512" y="130" width="176" height="60" rx="18" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/>
+  <rect x="742" y="130" width="176" height="60" rx="18" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <rect x="972" y="130" width="176" height="60" rx="18" fill="#fce7f3" stroke="#f472b6" stroke-width="2"/>
+
+  <text x="140" y="168" text-anchor="middle" class="participant">User</text>
+  <text x="370" y="168" text-anchor="middle" class="participant">main.c</text>
+  <text x="600" y="168" text-anchor="middle" class="participant">sql.c</text>
+  <text x="830" y="168" text-anchor="middle" class="participant">table.c</text>
+  <text x="1060" y="168" text-anchor="middle" class="participant">B+ Tree</text>
+
+  <line x1="140" y1="190" x2="140" y2="1870" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="10 10"/>
+  <line x1="370" y1="190" x2="370" y2="1870" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="10 10"/>
+  <line x1="600" y1="190" x2="600" y2="1870" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="10 10"/>
+  <line x1="830" y1="190" x2="830" y2="1870" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="10 10"/>
+  <line x1="1060" y1="190" x2="1060" y2="1870" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="10 10"/>
+
+  <rect x="362" y="234" width="16" height="1624" rx="8" fill="#bae6fd" stroke="#7dd3fc"/>
+  <rect x="592" y="350" width="16" height="1508" rx="8" fill="#bbf7d0" stroke="#86efac"/>
+  <rect x="822" y="590" width="16" height="972" rx="8" fill="#fde68a" stroke="#fbbf24"/>
+  <rect x="1052" y="720" width="16" height="362" rx="8" fill="#fbcfe8" stroke="#f9a8d4"/>
+
+  <rect x="148" y="210" width="214" height="64" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="255" y="234" text-anchor="middle" class="label">
+    <tspan x="255" dy="0">SELECT * FROM users</tspan>
+    <tspan x="255" dy="20">WHERE id &gt;= 10;</tspan>
+  </text>
+  <line x1="140" y1="294" x2="370" y2="294" stroke="#2563eb" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+
+  <rect x="384" y="326" width="202" height="64" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="485" y="350" text-anchor="middle" class="label">
+    <tspan x="485" dy="0">sql_execute(</tspan>
+    <tspan x="485" dy="20">table, input)</tspan>
+  </text>
+  <line x1="370" y1="410" x2="600" y2="410" stroke="#2563eb" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+
+  <rect x="664" y="442" width="248" height="64" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="788" y="466" text-anchor="middle" class="label">
+    <tspan x="788" dy="0">parse query</tspan>
+    <tspan x="788" dy="20">and WHERE clause</tspan>
+  </text>
+  <path d="M600 522 H682 V570 H600" fill="none" stroke="#7c3aed" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-violet)"/>
+
+  <rect x="566" y="586" width="298" height="82" rx="14" fill="#fffbeb" stroke="#fcd34d" stroke-width="2"/>
+  <text x="715" y="610" text-anchor="middle" class="label">
+    <tspan x="715" dy="0">table_find_by_id_</tspan>
+    <tspan x="715" dy="18">condition(</tspan>
+    <tspan x="715" dy="18">table, &gt;=, 10)</tspan>
+  </text>
+  <line x1="600" y1="684" x2="830" y2="684" stroke="#2563eb" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+
+  <rect x="844" y="716" width="202" height="64" rx="14" fill="#fdf2f8" stroke="#f9a8d4" stroke-width="2"/>
+  <text x="945" y="740" text-anchor="middle" class="label">
+    <tspan x="945" dy="0">table_find_id_leaf(</tspan>
+    <tspan x="945" dy="20">10)</tspan>
+  </text>
+  <line x1="830" y1="800" x2="1060" y2="800" stroke="#2563eb" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+
+  <rect x="860" y="834" width="170" height="46" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="945" y="862" text-anchor="middle" class="label">return start leaf</text>
+  <line x1="1060" y1="898" x2="830" y2="898" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" marker-end="url(#arrow-green)"/>
+
+  <rect x="844" y="930" width="202" height="64" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="945" y="954" text-anchor="middle" class="label">
+    <tspan x="945" dy="0">scan leaf.next</tspan>
+    <tspan x="945" dy="20">chain</tspan>
+  </text>
+  <line x1="830" y1="1014" x2="1060" y2="1014" stroke="#2563eb" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+
+  <rect x="856" y="1048" width="178" height="46" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="945" y="1076" text-anchor="middle" class="label">matching Record*</text>
+  <line x1="1060" y1="1112" x2="830" y2="1112" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" marker-end="url(#arrow-green)"/>
+
+  <rect x="592" y="1144" width="246" height="64" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="715" y="1168" text-anchor="middle" class="label">
+    <tspan x="715" dy="0">matching rows</tspan>
+    <tspan x="715" dy="20">+ row_count</tspan>
+  </text>
+  <line x1="830" y1="1228" x2="600" y2="1228" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" marker-end="url(#arrow-green)"/>
+
+  <rect x="378" y="1260" width="214" height="64" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="485" y="1284" text-anchor="middle" class="label">
+    <tspan x="485" dy="0">SQLResult</tspan>
+    <tspan x="485" dy="20">{OK, SELECT_ROWS}</tspan>
+  </text>
+  <line x1="600" y1="1344" x2="370" y2="1344" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" marker-end="url(#arrow-green)"/>
+
+  <rect x="84" y="1378" width="992" height="360" rx="22" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="110" y="1400" width="54" height="30" rx="10" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="137" y="1420" text-anchor="middle" class="pill">alt</text>
+
+  <rect x="184" y="1400" width="142" height="30" rx="10" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="255" y="1420" text-anchor="middle" class="pill">row_count &gt; 0</text>
+
+  <rect x="404" y="1400" width="152" height="30" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="480" y="1420" text-anchor="middle" class="pill">row_count == 0</text>
+
+  <rect x="484" y="1444" width="232" height="82" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="600" y="1468" text-anchor="middle" class="label">
+    <tspan x="600" dy="0">table_print_records(</tspan>
+    <tspan x="600" dy="18">records,</tspan>
+    <tspan x="600" dy="18">row_count)</tspan>
+  </text>
+  <line x1="370" y1="1542" x2="830" y2="1542" stroke="#2563eb" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+
+  <rect x="308" y="1572" width="354" height="64" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="485" y="1596" text-anchor="middle" class="label">
+    <tspan x="485" dy="0">render matching rows</tspan>
+    <tspan x="485" dy="20">id, name, age</tspan>
+  </text>
+  <line x1="830" y1="1656" x2="140" y2="1656" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" marker-end="url(#arrow-green)"/>
+
+  <rect x="166" y="1660" width="178" height="46" rx="14" fill="#fefce8" stroke="#facc15" stroke-width="2"/>
+  <text x="255" y="1688" text-anchor="middle" class="label">Not found</text>
+  <line x1="370" y1="1722" x2="140" y2="1722" stroke="#475569" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 8" marker-end="url(#arrow-slate)"/>
+
+  <rect x="390" y="1770" width="190" height="64" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="485" y="1794" text-anchor="middle" class="label">
+    <tspan x="485" dy="0">sql_result_destroy(</tspan>
+    <tspan x="485" dy="20">&amp;result)</tspan>
+  </text>
+  <line x1="370" y1="1858" x2="600" y2="1858" stroke="#475569" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-slate)"/>
+
+  <text x="56" y="1898" class="note">Solid blue arrows show request calls. Dashed green arrows show returned data. Slate arrows show the empty-result and cleanup path.</text>
+</svg>
