@@ -197,7 +197,8 @@ static void db_server_metrics_query_finished(DBServer *server, const DBServerExe
     } else if (execution->result.status == SQL_STATUS_SYNTAX_ERROR) {
         server->metrics.total_errors++;
         server->metrics.total_syntax_errors++;
-    } else if (execution->result.status == SQL_STATUS_QUERY_ERROR) {
+    } else if (execution->result.status == SQL_STATUS_QUERY_ERROR ||
+               execution->result.status == SQL_STATUS_EXIT) {
         server->metrics.total_errors++;
         server->metrics.total_query_errors++;
     } else if (execution->result.status == SQL_STATUS_ERROR) {

@@ -243,6 +243,119 @@ benchmarks/ 성능 확인용 benchmark target
 docs/       추가 설계/검증 참고 문서
 ```
 
+### macOS / Ubuntu 테스트 실행
+
+macOS와 Ubuntu에서는 PowerShell smoke script 대신 `make`, `unit_test`, `curl`, Postman collection 조합으로 같은 기본 API 계약을 확인할 수 있습니다.
+
+1. 빌드
+
+```bash
+make unit_test server
+```
+
+2. unit test 실행
+
+```bash
+./build/bin/unit_test
+```
+
+3. HTTP 서버 실행
+
+```bash
+./build/bin/server --serve --port 8080 --workers 2 --queue 4
+```
+
+4. 다른 터미널에서 `curl` 예시 또는 아래 Postman collection으로 smoke 확인
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/metrics
+curl -X POST http://127.0.0.1:8080/query \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"INSERT INTO users VALUES ('Alice', 20);\"}"
+```
+
+즉, macOS와 Ubuntu에서는 현재 PowerShell 스크립트 대신 `make`, `unit_test`, `curl`, Postman 조합으로 같은 기본 경로를 확인하는 방식입니다.
+
+### Postman smoke collection
+
+Postman으로도 같은 기본 HTTP 계약을 빠르게 확인할 수 있습니다.
+
+1. 먼저 서버를 실행합니다.
+
+```bash
+./build/bin/server --serve --port 8080 --workers 2 --queue 4
+```
+
+2. [tests/smoke/server_http_smoke_test.postman_collection.json](./tests/smoke/server_http_smoke_test.postman_collection.json)을 Postman에 import 합니다.
+3. 컬렉션 변수 `baseUrl`이 `http://127.0.0.1:8080`인지 확인합니다.
+4. 컬렉션 전체를 위에서 아래 순서대로 실행합니다.
+
+각 항목이 보는 의미는 아래와 같습니다.
+
+| 항목 | 검증 의미 |
+| --- | --- |
+| `GET /health` | 서버가 살아 있고 HTTP 라우팅이 정상인지 확인 |
+| `POST /query` INSERT | JSON body 파싱, 쓰기 경로, INSERT 응답 계약 확인 |
+| `POST /query` indexed SELECT | 조회 성공과 `usedIndex: true` 인덱스 경로 확인 |
+| 빈 SELECT 결과 | 결과가 없어도 `200`과 `rows: []`로 안정적으로 응답하는지 확인 |
+| syntax error 응답 | 잘못된 SQL이 `400 syntax_error`로 매핑되는지 확인 |
+| metrics delta 검증 | health/query/error/not-found 카운터가 실제 요청 흐름에 맞게 증가하는지 확인 |
+
+즉 이 Postman smoke collection은 "기본 기능이 실제 클라이언트 요청 기준으로 끝까지 동작하는지"를 검증하는 빠른 end-to-end 체크입니다.
+
+`queue_full`처럼 동시 요청이 필요한 시나리오는 Postman 컬렉션보다 기존 `tests/smoke/server_http_smoke_test.ps1`가 더 적합합니다.
+
+### Postman edge and burst collection
+
+우선순위 edge case와 가벼운 burst 시나리오를 Postman에서 바로 돌리고 싶다면 아래 고급 컬렉션을 사용하면 됩니다.
+
+1. 서버를 아래처럼 실행합니다.
+
+```bash
+./build/bin/server --serve --port 8080 --workers 4 --queue 64 \
+  --lock-timeout-ms 5000 \
+  --simulate-read-delay-ms 40 \
+  --simulate-write-delay-ms 100
+```
+
+2. [tests/smoke/server_http_edge_burst_test.postman_collection.json](./tests/smoke/server_http_edge_burst_test.postman_collection.json)을 Postman에 import 합니다.
+3. 컬렉션 변수 `baseUrl`이 서버 주소와 맞는지 확인합니다.
+4. `01 Edge Cases` 폴더를 먼저 실행하고, 이어서 `02 Burst Tests` 폴더를 실행합니다.
+
+각 항목이 보는 의미는 아래와 같습니다.
+
+| 항목 | 검증 의미 |
+| --- | --- |
+| `GET /does-not-exist`의 `404 not_found` | 존재하지 않는 경로가 올바른 routing error로 분리되는지 확인 |
+| `POST /health`, `GET /query`의 `405 method_not_allowed` | 경로는 맞지만 HTTP 메서드가 틀렸을 때 메서드 오류로 정확히 매핑되는지 확인 |
+| 빈 body 또는 잘못된 `query` 타입의 `400 malformed_http` | `POST /query`의 body 계약이 깨졌을 때 SQL 실행 전에 요청 자체를 거절하는지 확인 |
+| HTTP API에서 `EXIT`, `QUIT`를 거절하는 `400 query_error` | CLI 전용 명령이 HTTP 경계에서는 질의 오류로 안전하게 차단되는지 확인 |
+| routing error와 `malformed_http`, `EXIT`/`QUIT` metrics 분리 | 라우팅/파싱 오류는 DB query metrics에 섞이지 않고, 실제 쿼리로 들어간 `EXIT`/`QUIT`만 query metrics에 잡히는지 확인 |
+| `pm.sendRequest` fan-out read-only burst | 여러 읽기 요청을 동시에 보내도 read 경로가 안정적으로 응답하는지 확인 |
+| mixed 80/20 burst | read 위주 트래픽 속에 일부 write가 섞였을 때도 응답 계약과 metrics가 무너지지 않는지 확인 |
+| write-heavy burst | 여러 INSERT가 동시에 들어와도 쓰기 경로가 깨지지 않고 결과가 일관되게 내려오는지 확인 |
+
+즉 이 Postman edge and burst collection은 기본 smoke test보다 한 단계 더 나아가, 라우팅/메서드/body 계약의 edge case와 가벼운 동시 burst 상황에서 API 계약과 metrics 분리가 유지되는지를 빠르게 검증하는 테스트입니다.
+
+burst 시나리오는 Postman request 하나가 내부에서 여러 `pm.sendRequest`를 병렬로 보내는 방식입니다.
+그래서 metrics 비교가 흔들리지 않도록 각 burst 직전마다 baseline metrics를 다시 저장합니다.
+
+Postman은 request line이나 header framing 자체가 깨진 "raw malformed HTTP"를 만들기에는 적합하지 않습니다.
+이 컬렉션의 `malformed_http` 검증은 `POST /query`의 body/query 계약 실패를 통해 확인합니다.
+완전히 깨진 raw HTTP 헤더/바디 framing은 기존 PowerShell smoke나 수동 socket 테스트가 더 적합합니다.
+
+## 현재 확인 상태
+
+- `make` 전체 빌드는 현재 작업 세션에서 통과 확인
+- `build/bin/unit_test`는 현재 작업 세션에서 통과 확인
+- `make benchmarks`로 `benchmarks/perf10.c`, `benchmarks/cond10.c` 빌드 확인
+- `build/bin/server --query ...` CLI 하네스 기본 흐름 확인
+- `tests/smoke/server_cli_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.postman_collection.json`, `tests/smoke/server_http_edge_burst_test.postman_collection.json`는 저장소에 포함
+- PowerShell smoke test는 현재 Windows/PowerShell 환경용 검증 경로입니다
+- macOS와 Ubuntu에서는 `make`, `build/bin/unit_test`, `curl` 또는 Postman collection으로 같은 기본 API 계약과 edge/burst 시나리오를 확인할 수 있습니다
+
+기본 `make`는 `perf_test`, `condition_perf_test`도 함께 빌드합니다.
 ## 비범위
 
 - 다중 테이블, DDL, `UPDATE`, `DELETE`
