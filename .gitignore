@@ -35,6 +35,11 @@
 *.i*86
 *.x86_64
 *.hex
+main
+perf_test
+condition_perf_test
+unit_test
+server
 
 # Debug files
 *.dSYM/

@@ -364,6 +364,8 @@ make
 ./unit_test
 ```
 
+If `make` is unavailable in MinGW on Windows, run `mingw32-make` instead.
+
 `unit_test.c`에서는 아래 항목을 검증합니다.
 
 - 빈 트리 검색
@@ -401,11 +403,11 @@ All unit tests passed.
 
 `./perf_test` (1000 lookups)
 
-![perf_test local run](https://raw.githubusercontent.com/Jungle-12-303/week7-tem7-sql_processor_2/main/docs/images/perf_test-result.svg?v=20260416-1)
+![perf_test local run](https://raw.githubusercontent.com/Jungle-12-303/wk8-team4-sql-api/main/docs/images/perf_test-result.svg?v=20260416-1)
 
 `./condition_perf_test` (1000 exact queries)
 
-![condition_perf_test local run](https://raw.githubusercontent.com/Jungle-12-303/week7-tem7-sql_processor_2/main/docs/images/condition_perf_test-result.svg?v=20260416-1)
+![condition_perf_test local run](https://raw.githubusercontent.com/Jungle-12-303/wk8-team4-sql-api/main/docs/images/condition_perf_test-result.svg?v=20260416-1)
 
 
 ---
@@ -417,6 +419,15 @@ All unit tests passed.
 ```bash
 make
 ./main
+```
+
+If `make` is unavailable in MinGW on Windows, run `mingw32-make` instead.
+
+### Server Bootstrap
+
+```bash
+make server
+./server
 ```
 
 ### REPL에서 바로 보여주기 좋은 입력
