@@ -1,4 +1,5 @@
 #include "bptree.h"
+#include "db_server.h"
 #include "sql.h"
 #include "table.h"
 
@@ -361,6 +362,54 @@ static void test_sql_detailed_errors(void) {
     table_destroy(table);
 }
 
+static void test_db_server_shared_table_execution(void) {
+    DBServer server;
+    DBServerExecution execution;
+    int expected_ids[2];
+
+    assert(db_server_init(&server) == 1);
+
+    assert(db_server_execute(&server, "INSERT INTO users VALUES ('Alice', 20);", &execution) == 1);
+    assert(execution.result.status == SQL_STATUS_OK);
+    assert(execution.result.action == SQL_ACTION_INSERT);
+    assert(execution.result.inserted_id == 1);
+    assert(execution.used_index == 0);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "INSERT INTO users VALUES ('Bob', 30);", &execution) == 1);
+    assert(execution.result.status == SQL_STATUS_OK);
+    assert(execution.result.inserted_id == 2);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "SELECT * FROM users;", &execution) == 1);
+    assert(execution.result.status == SQL_STATUS_OK);
+    expected_ids[0] = 1;
+    expected_ids[1] = 2;
+    assert_result_ids(&execution.result, expected_ids, 2);
+    assert(execution.used_index == 0);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "SELECT * FROM users WHERE id = 2;", &execution) == 1);
+    assert(execution.result.status == SQL_STATUS_OK);
+    expected_ids[0] = 2;
+    assert_result_ids(&execution.result, expected_ids, 1);
+    assert(execution.used_index == 1);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "SELECT * FROM users WHERE name = 'Alice';", &execution) == 1);
+    assert(execution.result.status == SQL_STATUS_OK);
+    expected_ids[0] = 1;
+    assert_result_ids(&execution.result, expected_ids, 1);
+    assert(execution.used_index == 0);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "QUIT", &execution) == 1);
+    assert(execution.result.status == SQL_STATUS_EXIT);
+    db_server_execution_destroy(&execution);
+
+    db_server_destroy(&server);
+}
+
 /* Runs all unit tests in a single executable. */
 int main(void) {
     test_empty_tree_search();
@@ -375,6 +424,7 @@ int main(void) {
     test_table_condition_search();
     test_sql_execution();
     test_sql_detailed_errors();
+    test_db_server_shared_table_execution();
 
     printf("All unit tests passed.\n");
     return 0;
