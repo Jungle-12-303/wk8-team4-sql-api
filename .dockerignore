@@ -1,0 +1,7 @@
+.git
+.gitignore
+.codex
+build
+outputs
+*.o
+*.exe

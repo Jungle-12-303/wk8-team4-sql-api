@@ -1,36 +1,14 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-#ifdef _WIN32
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
-#ifndef WINVER
-#define WINVER 0x0600
-#endif
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
 #include <pthread.h>
-#endif
 
 typedef void *(*PlatformThreadRoutine)(void *);
 
-#ifdef _WIN32
-typedef CRITICAL_SECTION PlatformMutex;
-typedef CONDITION_VARIABLE PlatformCond;
-typedef struct PlatformRWLock {
-    PlatformMutex mutex;
-    unsigned long readers;
-    int writer;
-} PlatformRWLock;
-typedef HANDLE PlatformThread;
-#else
 typedef pthread_mutex_t PlatformMutex;
 typedef pthread_cond_t PlatformCond;
 typedef pthread_rwlock_t PlatformRWLock;
 typedef pthread_t PlatformThread;
-#endif
 
 int platform_mutex_init(PlatformMutex *mutex);
 void platform_mutex_destroy(PlatformMutex *mutex);

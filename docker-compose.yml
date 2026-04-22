@@ -1,0 +1,18 @@
+services:
+  sql-api:
+    build:
+      context: .
+      target: runtime
+    image: mini-dbms-sql-api:local
+    ports:
+      - "8080:8080"
+
+  unit-test:
+    profiles:
+      - test
+    build:
+      context: .
+      target: builder
+    image: mini-dbms-sql-api-builder:local
+    entrypoint:
+      - ./build/bin/unit_test

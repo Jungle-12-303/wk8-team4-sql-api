@@ -1,16 +1,7 @@
 CC = gcc
 
-ifeq ($(OS),Windows_NT)
-THREAD_FLAGS =
-POSIX_DEFS =
-SOCKET_LIBS = -lws2_32
-BIN_EXT = .exe
-else
 THREAD_FLAGS = -pthread
 POSIX_DEFS = -D_XOPEN_SOURCE=700
-SOCKET_LIBS =
-BIN_EXT =
-endif
 
 CFLAGS = -std=c11 -Wall -Wextra -Werror -pedantic -O2 $(POSIX_DEFS) $(THREAD_FLAGS) -Isrc/core -Isrc/server
 
@@ -40,13 +31,13 @@ CONDITION_PERF_TEST_OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(CONDITION_PERF_TEST_S
 PERF10_OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(PERF10_SRCS))
 COND10_OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(COND10_SRCS))
 
-MAIN_BIN = $(BIN_DIR)/main$(BIN_EXT)
-PERF_TEST_BIN = $(BIN_DIR)/perf_test$(BIN_EXT)
-CONDITION_PERF_TEST_BIN = $(BIN_DIR)/condition_perf_test$(BIN_EXT)
-UNIT_TEST_BIN = $(BIN_DIR)/unit_test$(BIN_EXT)
-SERVER_BIN = $(BIN_DIR)/server$(BIN_EXT)
-PERF10_BIN = $(BIN_DIR)/perf10$(BIN_EXT)
-COND10_BIN = $(BIN_DIR)/cond10$(BIN_EXT)
+MAIN_BIN = $(BIN_DIR)/main
+PERF_TEST_BIN = $(BIN_DIR)/perf_test
+CONDITION_PERF_TEST_BIN = $(BIN_DIR)/condition_perf_test
+UNIT_TEST_BIN = $(BIN_DIR)/unit_test
+SERVER_BIN = $(BIN_DIR)/server
+PERF10_BIN = $(BIN_DIR)/perf10
+COND10_BIN = $(BIN_DIR)/cond10
 
 all: main perf_test condition_perf_test unit_test server
 
@@ -79,7 +70,7 @@ $(UNIT_TEST_BIN): $(UNIT_TEST_OBJS) $(SERVER_LIB_OBJS) $(CORE_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(THREAD_FLAGS)
 
 $(SERVER_BIN): $(SERVER_OBJS) $(CORE_OBJS) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $@ $^ $(SOCKET_LIBS)
+	$(CC) $(CFLAGS) -o $@ $^
 
 $(PERF10_BIN): $(PERF10_OBJS) $(CORE_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^
@@ -96,6 +87,6 @@ $(BIN_DIR):
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -f *.o main$(BIN_EXT) perf_test$(BIN_EXT) condition_perf_test$(BIN_EXT) unit_test$(BIN_EXT) server$(BIN_EXT)
+	rm -f *.o main perf_test condition_perf_test unit_test server
 
 .PHONY: all clean main perf_test condition_perf_test unit_test server benchmarks perf10 cond10
