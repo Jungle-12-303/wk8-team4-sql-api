@@ -1,8 +1,12 @@
-FROM debian:bookworm-slim AS builder
+FROM debian:bookworm-slim AS devcontainer
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential make \
+    && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl git make \
     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+FROM devcontainer AS builder
 
 WORKDIR /app
 

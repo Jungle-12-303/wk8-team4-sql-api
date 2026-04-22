@@ -1,0 +1,19 @@
+{
+  "name": "Mini DBMS SQL API",
+  "build": {
+    "context": "..",
+    "dockerfile": "../Dockerfile",
+    "target": "devcontainer"
+  },
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "postCreateCommand": "make unit_test server",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.makefile-tools",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}
