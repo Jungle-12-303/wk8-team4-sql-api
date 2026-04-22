@@ -289,13 +289,38 @@ powershell -ExecutionPolicy Bypass -File .\tests\smoke\server_http_smoke_test.ps
 
 자세한 절차는 [docs/http-smoke-test.md](./docs/http-smoke-test.md)에 정리했습니다.
 
+### Postman smoke collection
+
+Postman으로도 같은 기본 HTTP 계약을 빠르게 확인할 수 있습니다.
+
+1. 먼저 서버를 실행합니다.
+
+```bash
+./build/bin/server --serve --port 8080 --workers 2 --queue 4
+```
+
+2. [tests/smoke/server_http_smoke_test.postman_collection.json](./tests/smoke/server_http_smoke_test.postman_collection.json)을 Postman에 import 합니다.
+3. 컬렉션 변수 `baseUrl`이 `http://127.0.0.1:8080`인지 확인합니다.
+4. 컬렉션 전체를 위에서 아래 순서대로 실행합니다.
+
+이 컬렉션은 아래를 검증합니다.
+
+- `GET /health`
+- `POST /query` INSERT
+- `POST /query` indexed SELECT
+- 빈 SELECT 결과
+- syntax error 응답
+- metrics delta 검증
+
+`queue_full`처럼 동시 요청이 필요한 시나리오는 Postman 컬렉션보다 기존 `tests/smoke/server_http_smoke_test.ps1`가 더 적합합니다.
+
 ## 현재 확인 상태
 
 - `make` 전체 빌드는 현재 작업 세션에서 통과 확인
 - `build/bin/unit_test`는 현재 작업 세션에서 통과 확인
 - `make benchmarks`로 `benchmarks/perf10.c`, `benchmarks/cond10.c` 빌드 확인
 - `build/bin/server --query ...` CLI 하네스 기본 흐름 확인
-- `tests/smoke/server_cli_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.ps1`는 저장소에 포함
+- `tests/smoke/server_cli_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.postman_collection.json`는 저장소에 포함
 - PowerShell smoke test는 Windows/PowerShell 환경에서 실행하는 검증 경로입니다
 
 즉, 저장소에는 검증 경로를 다 넣어두었고 실제 팀 로컬 환경에서는 그대로 재현할 수 있는 상태입니다.

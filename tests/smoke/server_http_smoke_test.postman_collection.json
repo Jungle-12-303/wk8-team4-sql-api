@@ -1,0 +1,308 @@
+{
+  "info": {
+    "_postman_id": "d9b6f191-8872-4ab1-bd9d-6a04b171b7f2",
+    "name": "Mini DBMS SQL API Smoke Test",
+    "description": "Import this collection into Postman and run the requests in order against a locally running server. Default baseUrl is http://127.0.0.1:8080. The collection stores the inserted row id and a baseline metrics snapshot so the final metrics assertion stays stable across reruns.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "insertedId",
+      "value": ""
+    },
+    {
+      "key": "missingId",
+      "value": ""
+    },
+    {
+      "key": "baselineMetrics",
+      "value": "{}"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Baseline metrics",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "",
+              "pm.test('GET /metrics returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('metrics response shape is valid', function () {",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.metrics).to.be.an('object');",
+              "});",
+              "",
+              "pm.collectionVariables.set('baselineMetrics', JSON.stringify(body.metrics));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/metrics",
+        "description": "Capture the current metrics snapshot before the smoke flow starts."
+      }
+    },
+    {
+      "name": "02 Health check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "",
+              "pm.test('GET /health returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('health response is healthy', function () {",
+              "  pm.expect(body).to.deep.include({ ok: true, status: 'healthy' });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "03 Insert Alice",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "",
+              "pm.test('POST /query insert returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('insert response contains inserted id', function () {",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.action).to.eql('insert');",
+              "  pm.expect(body.usedIndex).to.eql(false);",
+              "  pm.expect(body.insertedId).to.be.a('number');",
+              "  pm.expect(body.insertedId).to.be.above(0);",
+              "});",
+              "",
+              "pm.collectionVariables.set('insertedId', String(body.insertedId));",
+              "pm.collectionVariables.set('missingId', String(body.insertedId + 1000));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"INSERT INTO users VALUES ('Alice', 20);\"\n}"
+        },
+        "url": "{{baseUrl}}/query"
+      }
+    },
+    {
+      "name": "04 Select inserted row",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "const insertedId = Number(pm.collectionVariables.get('insertedId'));",
+              "",
+              "pm.test('POST /query select returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('select response contains Alice and uses index', function () {",
+              "  pm.expect(insertedId).to.be.above(0);",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.action).to.eql('select');",
+              "  pm.expect(body.usedIndex).to.eql(true);",
+              "  pm.expect(body.rowCount).to.eql(1);",
+              "  pm.expect(body.rows).to.be.an('array').with.lengthOf(1);",
+              "  pm.expect(body.rows[0].id).to.eql(insertedId);",
+              "  pm.expect(body.rows[0].name).to.eql('Alice');",
+              "  pm.expect(body.rows[0].age).to.eql(20);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"SELECT * FROM users WHERE id = {{insertedId}};\"\n}"
+        },
+        "url": "{{baseUrl}}/query"
+      }
+    },
+    {
+      "name": "05 Select missing row",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "const missingId = Number(pm.collectionVariables.get('missingId'));",
+              "",
+              "pm.test('empty select returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('empty select returns rows: []', function () {",
+              "  pm.expect(missingId).to.be.above(0);",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.action).to.eql('select');",
+              "  pm.expect(body.usedIndex).to.eql(true);",
+              "  pm.expect(body.rowCount).to.eql(0);",
+              "  pm.expect(body.rows).to.be.an('array').that.is.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"SELECT * FROM users WHERE id = {{missingId}};\"\n}"
+        },
+        "url": "{{baseUrl}}/query"
+      }
+    },
+    {
+      "name": "06 Syntax error",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "",
+              "pm.test('syntax error returns 400', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "",
+              "pm.test('syntax error contract is stable', function () {",
+              "  pm.expect(body.ok).to.eql(false);",
+              "  pm.expect(body.status).to.eql('syntax_error');",
+              "  pm.expect(body.error).to.eql('syntax_error');",
+              "  pm.expect(body.message).to.be.a('string').and.not.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"SELECT * FORM users;\"\n}"
+        },
+        "url": "{{baseUrl}}/query"
+      }
+    },
+    {
+      "name": "07 Final metrics",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "const baseline = JSON.parse(pm.collectionVariables.get('baselineMetrics') || '{}');",
+              "const metrics = body.metrics || {};",
+              "",
+              "function delta(key) {",
+              "  return Number(metrics[key] || 0) - Number(baseline[key] || 0);",
+              "}",
+              "",
+              "pm.test('final GET /metrics returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('metrics delta matches smoke flow', function () {",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(delta('totalRequests')).to.eql(6);",
+              "  pm.expect(delta('totalHealthRequests')).to.eql(1);",
+              "  pm.expect(delta('totalMetricsRequests')).to.eql(1);",
+              "  pm.expect(delta('totalQueryRequests')).to.eql(4);",
+              "  pm.expect(delta('totalSelectRequests')).to.eql(3);",
+              "  pm.expect(delta('totalInsertRequests')).to.eql(1);",
+              "  pm.expect(delta('totalErrors')).to.eql(1);",
+              "  pm.expect(delta('totalSyntaxErrors')).to.eql(1);",
+              "  pm.expect(delta('totalQueryErrors')).to.eql(0);",
+              "  pm.expect(delta('totalInternalErrors')).to.eql(0);",
+              "  pm.expect(delta('totalNotFoundResults')).to.eql(1);",
+              "  pm.expect(delta('totalQueueFull')).to.eql(0);",
+              "  pm.expect(delta('totalLockTimeouts')).to.eql(0);",
+              "  pm.expect(Number(metrics.activeQueryRequests)).to.eql(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/metrics",
+        "description": "Run the collection in order so this final request can compare deltas against the baseline metrics snapshot."
+      }
+    }
+  ]
+}
