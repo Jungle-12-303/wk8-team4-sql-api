@@ -134,6 +134,16 @@ make
 macOS와 Ubuntu에서는 위 명령을 그대로 사용하면 됩니다.  
 Windows MinGW 환경에서 `make`가 없으면 `mingw32-make`를 사용하면 됩니다.
 
+#### Docker / Docker Compose
+
+로컬에 `gcc`/`make`를 직접 설치하지 않고 실행하려면 Docker Engine 또는 Docker Desktop과 Docker Compose v2가 필요합니다.
+
+이 저장소에는 아래 파일이 포함됩니다.
+
+- `Dockerfile`: multi-stage build로 `server`, `unit_test`를 빌드
+- `docker-compose.yml`: HTTP 서버 실행과 컨테이너 내부 unit test 실행용 서비스 정의
+- `.dockerignore`: 불필요한 build 산출물과 로컬 메타데이터 제외
+
 Makefile을 쓰는 것을 권장하지만, 직접 컴파일도 가능합니다.
 
 POSIX/macOS/Linux:
@@ -168,6 +178,53 @@ gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Isrc/core -Isrc/server -o buil
 
 macOS와 Ubuntu에서는 아래 명령을 그대로 사용하면 됩니다.  
 Windows MinGW에서는 같은 경로에 `.exe`를 붙여 실행하면 됩니다.
+
+### Docker Compose로 HTTP 서버 실행
+
+가장 간단한 Docker 실행 방법은 Compose로 HTTP 서버를 올리는 것입니다.
+
+```bash
+docker compose up --build sql-api
+```
+
+서버는 기본적으로 컨테이너 내부 `8080` 포트에서 아래 옵션으로 실행됩니다.
+
+```text
+./server --serve --port 8080 --workers 4 --queue 16
+```
+
+로컬에서는 아래 주소로 접근하면 됩니다.
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/metrics
+```
+
+종료:
+
+```bash
+docker compose down
+```
+
+### Docker 이미지 직접 빌드 / 실행
+
+Compose 없이 단일 이미지로도 실행할 수 있습니다.
+
+```bash
+docker build -t mini-dbms-sql-api .
+docker run --rm -p 8080:8080 mini-dbms-sql-api
+```
+
+`Dockerfile`은 `ENTRYPOINT ["./server"]`를 사용하므로, HTTP 서버 외에 CLI 하네스도 그대로 실행할 수 있습니다.
+
+예시:
+
+```bash
+docker run --rm mini-dbms-sql-api \
+  --query "INSERT INTO users VALUES ('Alice', 20);" \
+  --query "SELECT * FROM users WHERE id = 1;" \
+  --query "QUIT"
+```
 
 ### 1. 기존 REPL
 
@@ -365,6 +422,12 @@ curl -X POST http://127.0.0.1:8080/query \
 ```bash
 make unit_test
 ./build/bin/unit_test
+```
+
+Docker Compose로도 같은 unit test를 컨테이너 안에서 실행할 수 있습니다.
+
+```bash
+docker compose --profile test run --rm unit-test
 ```
 
 Windows MinGW에서는 `./build/bin/unit_test.exe`를 사용합니다.
