@@ -47,7 +47,13 @@ client
 
 세미콜론은 선택 사항이고, 키워드/테이블명/컬럼명은 대소문자를 구분하지 않습니다.
 
-### INSERT
+- `src/core/`: SQL 파싱/실행, table 저장소, B+Tree 인덱스
+- `src/server/`: CLI 하네스, HTTP 서버, API 직렬화, shared DB 서버 경계, 플랫폼 래퍼
+- `src/cli/main.c`: 기존 REPL 엔트리포인트
+- `tests/unit/unit_test.c`: 엔진과 서버 경계 단위 테스트
+- `tests/smoke/`: PowerShell 기반 CLI/HTTP smoke test, Postman collection
+- `benchmarks/`: 성능 확인용 벤치마크
+- `docs/`: 설계 문서, 다이어그램, 발표/검증 가이드
 
 ```sql
 INSERT INTO users VALUES ('Alice', 20);
@@ -96,38 +102,52 @@ QUIT
 
 ## 빌드
 
-기본 빌드는 REPL, 서버, 단위 테스트, 기본 benchmark 실행 파일을 만듭니다.
+### 개발 도구 준비
+
+#### macOS
+
+먼저 Xcode Command Line Tools를 설치합니다.
+
+```bash
+xcode-select --install
+```
+
+기본 `clang`, `make`, `curl`로 바로 빌드할 수 있습니다.
+
+#### Ubuntu
+
+필수 빌드 도구와 `curl`을 설치합니다.
+
+```bash
+sudo apt update
+sudo apt install -y build-essential curl
+```
+
+#### Windows MinGW
+
+MinGW shell 또는 PowerShell에서 `gcc`, `mingw32-make`를 사용할 수 있어야 합니다.
 
 ```bash
 make
 ```
 
-주요 타깃:
-
-```bash
-make main
-make server
-make unit_test
-make benchmarks
-make clean
-```
-
-생성되는 주요 바이너리:
-
-- POSIX/macOS/Linux: `build/bin/main`, `build/bin/server`, `build/bin/unit_test`
-- Windows MinGW: `build\bin\main.exe`, `build\bin\server.exe`, `build\bin\unit_test.exe`
-
-Windows MinGW 환경에서 `make`가 없으면 `mingw32-make`를 사용합니다.
-
-```powershell
-mingw32-make
-```
-
-## 직접 컴파일
+macOS와 Ubuntu에서는 위 명령을 그대로 사용하면 됩니다.  
+Windows MinGW 환경에서 `make`가 없으면 `mingw32-make`를 사용하면 됩니다.
 
 Makefile을 쓰는 것을 권장하지만, 직접 컴파일도 가능합니다.
 
 POSIX/macOS/Linux:
+
+### macOS / Ubuntu 직접 빌드
+
+```bash
+mkdir -p build/bin
+cc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_XOPEN_SOURCE=700 -pthread -Isrc/core -Isrc/server -o build/bin/unit_test tests/unit/unit_test.c src/server/db_server.c src/server/api.c src/server/platform.c src/core/bptree.c src/core/table.c src/core/sql.c
+cc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_XOPEN_SOURCE=700 -pthread -Isrc/core -Isrc/server -o build/bin/server src/server/server.c src/server/http_server.c src/server/db_server.c src/server/api.c src/server/platform.c src/core/bptree.c src/core/table.c src/core/sql.c
+cc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -D_XOPEN_SOURCE=700 -pthread -Isrc/core -Isrc/server -o build/bin/main src/cli/main.c src/core/bptree.c src/core/table.c src/core/sql.c
+```
+
+### Windows MinGW 직접 빌드
 
 ```bash
 mkdir -p build/bin
@@ -141,11 +161,15 @@ Windows MinGW:
 mkdir build\bin
 gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Isrc/core -Isrc/server -o build/bin/unit_test.exe tests/unit/unit_test.c src/server/db_server.c src/server/api.c src/server/platform.c src/core/bptree.c src/core/table.c src/core/sql.c
 gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Isrc/core -Isrc/server -o build/bin/server.exe src/server/server.c src/server/http_server.c src/server/db_server.c src/server/api.c src/server/platform.c src/core/bptree.c src/core/table.c src/core/sql.c -lws2_32
+gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 -Isrc/core -Isrc/server -o build/bin/main.exe src/cli/main.c src/core/bptree.c src/core/table.c src/core/sql.c
 ```
 
 ## 실행
 
-### REPL
+macOS와 Ubuntu에서는 아래 명령을 그대로 사용하면 됩니다.  
+Windows MinGW에서는 같은 경로에 `.exe`를 붙여 실행하면 됩니다.
+
+### 1. 기존 REPL
 
 ```bash
 ./build/bin/main
@@ -343,12 +367,7 @@ make unit_test
 ./build/bin/unit_test
 ```
 
-Windows:
-
-```powershell
-mingw32-make unit_test
-.\build\bin\unit_test.exe
-```
+Windows MinGW에서는 `./build/bin/unit_test.exe`를 사용합니다.
 
 현재 unit test는 아래를 확인합니다.
 
@@ -360,13 +379,17 @@ mingw32-make unit_test
 - lock timeout과 metrics 집계
 - HTTP request parsing과 JSON response contract
 
-### Smoke test
+현재 CLI smoke script는 Windows PowerShell 경로를 기준으로 작성되어 있습니다.
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\tests\smoke\server_cli_smoke_test.ps1
+```
 
 PowerShell smoke test는 Windows/PowerShell 환경에서 `build\bin\server.exe`를 대상으로 실행합니다.
 
-```powershell
-mingw32-make server
-powershell -ExecutionPolicy Bypass -File .\tests\smoke\server_cli_smoke_test.ps1
+현재 HTTP smoke script도 Windows PowerShell + `build\bin\server.exe` 기준입니다.
+
+```bash
 powershell -ExecutionPolicy Bypass -File .\tests\smoke\server_http_smoke_test.ps1
 ```
 
@@ -377,13 +400,74 @@ HTTP smoke test는 두 단계를 검증합니다.
 
 자세한 절차는 [docs/http-smoke-test.md](./docs/http-smoke-test.md)에 정리되어 있습니다.
 
-### Benchmarks
+### macOS / Ubuntu 테스트 실행
+
+macOS와 Ubuntu에서는 아래 순서로 같은 검증을 진행하면 됩니다.
+
+1. 빌드
 
 ```bash
-make benchmarks
-./build/bin/perf10
-./build/bin/cond10
+make unit_test server
 ```
+
+2. unit test 실행
+
+```bash
+./build/bin/unit_test
+```
+
+3. HTTP 서버 실행
+
+```bash
+./build/bin/server --serve --port 8080 --workers 2 --queue 4
+```
+
+4. 다른 터미널에서 `curl` 예시 또는 아래 Postman collection으로 smoke 확인
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/metrics
+curl -X POST http://127.0.0.1:8080/query \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"INSERT INTO users VALUES ('Alice', 20);\"}"
+```
+
+즉, macOS와 Ubuntu에서는 현재 PowerShell 스크립트 대신 `make`, `unit_test`, `curl`, Postman 조합으로 같은 기본 경로를 확인하는 방식입니다.
+
+### Postman smoke collection
+
+Postman으로도 같은 기본 HTTP 계약을 빠르게 확인할 수 있습니다.
+
+1. 먼저 서버를 실행합니다.
+
+```bash
+./build/bin/server --serve --port 8080 --workers 2 --queue 4
+```
+
+2. [tests/smoke/server_http_smoke_test.postman_collection.json](./tests/smoke/server_http_smoke_test.postman_collection.json)을 Postman에 import 합니다.
+3. 컬렉션 변수 `baseUrl`이 `http://127.0.0.1:8080`인지 확인합니다.
+4. 컬렉션 전체를 위에서 아래 순서대로 실행합니다.
+
+이 컬렉션은 아래를 검증합니다.
+
+- `GET /health`
+- `POST /query` INSERT
+- `POST /query` indexed SELECT
+- 빈 SELECT 결과
+- syntax error 응답
+- metrics delta 검증
+
+`queue_full`처럼 동시 요청이 필요한 시나리오는 Postman 컬렉션보다 기존 `tests/smoke/server_http_smoke_test.ps1`가 더 적합합니다.
+
+## 현재 확인 상태
+
+- `make` 전체 빌드는 현재 작업 세션에서 통과 확인
+- `build/bin/unit_test`는 현재 작업 세션에서 통과 확인
+- `make benchmarks`로 `benchmarks/perf10.c`, `benchmarks/cond10.c` 빌드 확인
+- `build/bin/server --query ...` CLI 하네스 기본 흐름 확인
+- `tests/smoke/server_cli_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.ps1`, `tests/smoke/server_http_smoke_test.postman_collection.json`는 저장소에 포함
+- PowerShell smoke test는 현재 Windows/PowerShell 환경용 검증 경로입니다
+- macOS와 Ubuntu에서는 `make`, `build/bin/unit_test`, `curl` 또는 Postman collection으로 같은 기본 API 계약을 확인할 수 있습니다
 
 기본 `make`는 `perf_test`, `condition_perf_test`도 함께 빌드합니다.
 
