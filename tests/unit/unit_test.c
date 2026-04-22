@@ -414,7 +414,8 @@ static void test_db_server_shared_table_execution(void) {
     assert(metrics.total_insert_requests == 2);
     assert(metrics.total_select_requests == 3);
     assert(metrics.total_not_found_results == 0);
-    assert(metrics.total_errors == 0);
+    assert(metrics.total_query_errors == 1);
+    assert(metrics.total_errors == 1);
 
     db_server_destroy(&server);
 }
@@ -528,6 +529,15 @@ static void test_api_http_contract(void) {
     assert(api_build_execution_response(&execution, &response) == 1);
     assert(response.status_code == 400);
     assert(strstr(response.body, "\"syntax_error\"") != NULL);
+    api_response_destroy(&response);
+    db_server_execution_destroy(&execution);
+
+    assert(db_server_execute(&server, "EXIT", &execution) == 1);
+    memset(&response, 0, sizeof(response));
+    assert(api_build_execution_response(&execution, &response) == 1);
+    assert(response.status_code == 400);
+    assert(strstr(response.body, "\"query_error\"") != NULL);
+    assert(strstr(response.body, "CLI mode") != NULL);
     api_response_destroy(&response);
     db_server_execution_destroy(&execution);
 
