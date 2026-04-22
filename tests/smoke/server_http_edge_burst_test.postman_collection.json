@@ -1,0 +1,1020 @@
+{
+  "info": {
+    "_postman_id": "6d9e41f8-5e2a-4a22-b8d3-70fe82f19344",
+    "name": "Mini DBMS SQL API Edge And Burst Test",
+    "description": "Import this collection into Postman and run the folders in order against a locally running server. Edge cases cover 404/405/malformed_http/query_error boundaries. Burst folders use pm.sendRequest fan-out to simulate read-only, mixed 80/20, and write-heavy traffic from Postman.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "edgeBaselineMetrics",
+      "value": "{}"
+    },
+    {
+      "key": "burstSeedId",
+      "value": ""
+    },
+    {
+      "key": "readBurstBaselineMetrics",
+      "value": "{}"
+    },
+    {
+      "key": "mixedBurstBaselineMetrics",
+      "value": "{}"
+    },
+    {
+      "key": "writeBurstBaselineMetrics",
+      "value": "{}"
+    },
+    {
+      "key": "readBurstCount",
+      "value": "12"
+    },
+    {
+      "key": "mixedReadCount",
+      "value": "8"
+    },
+    {
+      "key": "mixedWriteCount",
+      "value": "2"
+    },
+    {
+      "key": "writeBurstCount",
+      "value": "10"
+    },
+    {
+      "key": "mixedBurstInsertedIds",
+      "value": "[]"
+    },
+    {
+      "key": "writeBurstInsertedIds",
+      "value": "[]"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Edge Cases",
+      "item": [
+        {
+          "name": "00 Capture edge baseline metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('edge baseline metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('edge baseline metrics shape is valid', function () {",
+                  "  pm.expect(body.ok).to.eql(true);",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(body.metrics).to.be.an('object');",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('edgeBaselineMetrics', JSON.stringify(body.metrics));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        },
+        {
+          "name": "01 Unknown endpoint returns 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('unknown endpoint returns 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('unknown endpoint contract is stable', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('not_found');",
+                  "  pm.expect(body.error).to.eql('not_found');",
+                  "  pm.expect(body.message).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/does-not-exist"
+          }
+        },
+        {
+          "name": "02 POST health returns 405",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('POST /health returns 405', function () {",
+                  "  pm.response.to.have.status(405);",
+                  "});",
+                  "",
+                  "pm.test('POST /health contract is stable', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('method_not_allowed');",
+                  "  pm.expect(body.error).to.eql('method_not_allowed');",
+                  "  pm.expect(body.message).to.include('GET');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "03 GET query returns 405",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('GET /query returns 405', function () {",
+                  "  pm.response.to.have.status(405);",
+                  "});",
+                  "",
+                  "pm.test('GET /query contract is stable', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('method_not_allowed');",
+                  "  pm.expect(body.error).to.eql('method_not_allowed');",
+                  "  pm.expect(body.message).to.include('POST');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/query"
+          }
+        },
+        {
+          "name": "04 Empty POST body returns malformed_http",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('empty POST /query returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('empty POST /query maps to malformed_http', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('malformed_http');",
+                  "  pm.expect(body.error).to.eql('malformed_http');",
+                  "  pm.expect(body.message).to.include('JSON body');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": "{{baseUrl}}/query"
+          }
+        },
+        {
+          "name": "05 Invalid query field type returns malformed_http",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('invalid query field type returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('invalid query field type maps to malformed_http', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('malformed_http');",
+                  "  pm.expect(body.error).to.eql('malformed_http');",
+                  "  pm.expect(body.message).to.include('string field named query');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": 123\n}"
+            },
+            "url": "{{baseUrl}}/query"
+          }
+        },
+        {
+          "name": "06 EXIT over HTTP returns query_error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('EXIT over HTTP returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('EXIT over HTTP maps to query_error', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('query_error');",
+                  "  pm.expect(body.error).to.eql('query_error');",
+                  "  pm.expect(body.message).to.include('CLI mode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"EXIT\"\n}"
+            },
+            "url": "{{baseUrl}}/query"
+          }
+        },
+        {
+          "name": "07 QUIT over HTTP returns query_error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('QUIT over HTTP returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('QUIT over HTTP maps to query_error', function () {",
+                  "  pm.expect(body.ok).to.eql(false);",
+                  "  pm.expect(body.status).to.eql('query_error');",
+                  "  pm.expect(body.error).to.eql('query_error');",
+                  "  pm.expect(body.message).to.include('CLI mode');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"QUIT\"\n}"
+            },
+            "url": "{{baseUrl}}/query"
+          }
+        },
+        {
+          "name": "08 Final edge metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const baseline = JSON.parse(pm.collectionVariables.get('edgeBaselineMetrics') || '{}');",
+                  "const metrics = body.metrics || {};",
+                  "",
+                  "function delta(key) {",
+                  "  return Number(metrics[key] || 0) - Number(baseline[key] || 0);",
+                  "}",
+                  "",
+                  "pm.test('final edge metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('routing and malformed_http stay out of DB metrics while EXIT and QUIT are counted', function () {",
+                  "  pm.expect(body.ok).to.eql(true);",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(delta('totalRequests')).to.eql(3);",
+                  "  pm.expect(delta('totalHealthRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalMetricsRequests')).to.eql(1);",
+                  "  pm.expect(delta('totalQueryRequests')).to.eql(2);",
+                  "  pm.expect(delta('totalSelectRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalInsertRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalErrors')).to.eql(2);",
+                  "  pm.expect(delta('totalSyntaxErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalQueryErrors')).to.eql(2);",
+                  "  pm.expect(delta('totalInternalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalNotFoundResults')).to.eql(0);",
+                  "  pm.expect(delta('totalQueueFull')).to.eql(0);",
+                  "  pm.expect(delta('totalLockTimeouts')).to.eql(0);",
+                  "  pm.expect(Number(metrics.activeQueryRequests)).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Burst Tests",
+      "item": [
+        {
+          "name": "00 Seed burst dataset",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('burst seed insert returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('burst seed insert captures a valid id', function () {",
+                  "  pm.expect(body.ok).to.eql(true);",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(body.action).to.eql('insert');",
+                  "  pm.expect(body.insertedId).to.be.a('number');",
+                  "  pm.expect(body.insertedId).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('burstSeedId', String(body.insertedId));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"INSERT INTO users VALUES ('Burst Seed', 11);\"\n}"
+            },
+            "url": "{{baseUrl}}/query"
+          }
+        },
+        {
+          "name": "01 Capture read-only burst baseline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('read-only burst baseline returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('readBurstBaselineMetrics', JSON.stringify(body.metrics || {}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        },
+        {
+          "name": "02 Read-only burst",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dummyBody = pm.response.json();",
+                  "const total = Number(pm.collectionVariables.get('readBurstCount') || '12');",
+                  "const seedId = Number(pm.collectionVariables.get('burstSeedId') || '0');",
+                  "",
+                  "pm.test('read-only burst trigger request returns 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(dummyBody.status).to.eql('not_found');",
+                  "});",
+                  "",
+                  "pm.test('read-only burst completes with indexed read success', function (done) {",
+                  "  const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "  let pending = total;",
+                  "  const failures = [];",
+                  "  const responseCodes = [];",
+                  "",
+                  "  pm.expect(seedId).to.be.above(0);",
+                  "  pm.expect(total).to.be.above(0);",
+                  "",
+                  "  function finalize() {",
+                  "    try {",
+                  "      pm.expect(responseCodes.length).to.eql(total);",
+                  "      pm.expect(failures, failures.join('\\n')).to.be.empty;",
+                  "      done();",
+                  "    } catch (error) {",
+                  "      done(error);",
+                  "    }",
+                  "  }",
+                  "",
+                  "  function finishOne() {",
+                  "    pending -= 1;",
+                  "    if (pending === 0) {",
+                  "      finalize();",
+                  "    }",
+                  "  }",
+                  "",
+                  "  for (let index = 0; index < total; index += 1) {",
+                  "    pm.sendRequest({",
+                  "      url: baseUrl + '/query',",
+                  "      method: 'POST',",
+                  "      header: { 'Content-Type': 'application/json' },",
+                  "      body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({ query: 'SELECT * FROM users WHERE id = ' + seedId + ';' })",
+                  "      }",
+                  "    }, function (err, res) {",
+                  "      responseCodes.push(err ? 0 : res.code);",
+                  "",
+                  "      if (err) {",
+                  "        failures.push('read ' + index + ' network error: ' + err);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      let body;",
+                  "      try {",
+                  "        body = res.json();",
+                  "      } catch (parseError) {",
+                  "        failures.push('read ' + index + ' returned non-JSON body');",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      if (res.code !== 200) {",
+                  "        failures.push('read ' + index + ' returned status ' + res.code);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      try {",
+                  "        pm.expect(body.ok, 'read ' + index + ' ok').to.eql(true);",
+                  "        pm.expect(body.status, 'read ' + index + ' status').to.eql('ok');",
+                  "        pm.expect(body.action, 'read ' + index + ' action').to.eql('select');",
+                  "        pm.expect(body.usedIndex, 'read ' + index + ' usedIndex').to.eql(true);",
+                  "        pm.expect(body.rowCount, 'read ' + index + ' rowCount').to.eql(1);",
+                  "        pm.expect(body.rows, 'read ' + index + ' rows').to.be.an('array').with.lengthOf(1);",
+                  "        pm.expect(body.rows[0].id, 'read ' + index + ' row id').to.eql(seedId);",
+                  "      } catch (assertError) {",
+                  "        failures.push(assertError.message);",
+                  "      }",
+                  "",
+                  "      finishOne();",
+                  "    });",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/__postman__/read-burst-trigger"
+          }
+        },
+        {
+          "name": "03 Final read-only burst metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const baseline = JSON.parse(pm.collectionVariables.get('readBurstBaselineMetrics') || '{}');",
+                  "const metrics = body.metrics || {};",
+                  "const total = Number(pm.collectionVariables.get('readBurstCount') || '12');",
+                  "",
+                  "function delta(key) {",
+                  "  return Number(metrics[key] || 0) - Number(baseline[key] || 0);",
+                  "}",
+                  "",
+                  "pm.test('read-only burst metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('read-only burst metrics match select-only fan-out', function () {",
+                  "  pm.expect(delta('totalRequests')).to.eql(total + 1);",
+                  "  pm.expect(delta('totalHealthRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalMetricsRequests')).to.eql(1);",
+                  "  pm.expect(delta('totalQueryRequests')).to.eql(total);",
+                  "  pm.expect(delta('totalSelectRequests')).to.eql(total);",
+                  "  pm.expect(delta('totalInsertRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalSyntaxErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalQueryErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalInternalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalNotFoundResults')).to.eql(0);",
+                  "  pm.expect(delta('totalQueueFull')).to.eql(0);",
+                  "  pm.expect(delta('totalLockTimeouts')).to.eql(0);",
+                  "  pm.expect(Number(metrics.activeQueryRequests)).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        },
+        {
+          "name": "04 Capture mixed 80/20 baseline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('mixed baseline metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('mixedBurstBaselineMetrics', JSON.stringify(body.metrics || {}));",
+                  "pm.collectionVariables.set('mixedBurstInsertedIds', '[]');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        },
+        {
+          "name": "05 Mixed 80/20 burst",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dummyBody = pm.response.json();",
+                  "const readCount = Number(pm.collectionVariables.get('mixedReadCount') || '8');",
+                  "const writeCount = Number(pm.collectionVariables.get('mixedWriteCount') || '2');",
+                  "const seedId = Number(pm.collectionVariables.get('burstSeedId') || '0');",
+                  "",
+                  "pm.test('mixed burst trigger request returns 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(dummyBody.status).to.eql('not_found');",
+                  "});",
+                  "",
+                  "pm.test('mixed 80/20 burst completes with successful reads and writes', function (done) {",
+                  "  const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "  const total = readCount + writeCount;",
+                  "  let pending = total;",
+                  "  const failures = [];",
+                  "  const writeIds = [];",
+                  "",
+                  "  pm.expect(seedId).to.be.above(0);",
+                  "  pm.expect(readCount).to.be.above(0);",
+                  "  pm.expect(writeCount).to.be.above(0);",
+                  "",
+                  "  function finalize() {",
+                  "    try {",
+                  "      pm.expect(writeIds.length).to.eql(writeCount);",
+                  "      pm.expect(new Set(writeIds).size).to.eql(writeCount);",
+                  "      pm.expect(failures, failures.join('\\n')).to.be.empty;",
+                  "      pm.collectionVariables.set('mixedBurstInsertedIds', JSON.stringify(writeIds));",
+                  "      done();",
+                  "    } catch (error) {",
+                  "      done(error);",
+                  "    }",
+                  "  }",
+                  "",
+                  "  function finishOne() {",
+                  "    pending -= 1;",
+                  "    if (pending === 0) {",
+                  "      finalize();",
+                  "    }",
+                  "  }",
+                  "",
+                  "  function sendRead(index) {",
+                  "    pm.sendRequest({",
+                  "      url: baseUrl + '/query',",
+                  "      method: 'POST',",
+                  "      header: { 'Content-Type': 'application/json' },",
+                  "      body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({ query: 'SELECT * FROM users WHERE id = ' + seedId + ';' })",
+                  "      }",
+                  "    }, function (err, res) {",
+                  "      if (err) {",
+                  "        failures.push('mixed read ' + index + ' network error: ' + err);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      let body;",
+                  "      try {",
+                  "        body = res.json();",
+                  "      } catch (parseError) {",
+                  "        failures.push('mixed read ' + index + ' returned non-JSON body');",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      if (res.code !== 200) {",
+                  "        failures.push('mixed read ' + index + ' returned status ' + res.code);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      try {",
+                  "        pm.expect(body.ok, 'mixed read ' + index + ' ok').to.eql(true);",
+                  "        pm.expect(body.action, 'mixed read ' + index + ' action').to.eql('select');",
+                  "        pm.expect(body.usedIndex, 'mixed read ' + index + ' usedIndex').to.eql(true);",
+                  "        pm.expect(body.rowCount, 'mixed read ' + index + ' rowCount').to.eql(1);",
+                  "        pm.expect(body.rows[0].id, 'mixed read ' + index + ' row id').to.eql(seedId);",
+                  "      } catch (assertError) {",
+                  "        failures.push(assertError.message);",
+                  "      }",
+                  "",
+                  "      finishOne();",
+                  "    });",
+                  "  }",
+                  "",
+                  "  function sendWrite(index) {",
+                  "    const name = 'Mixed Writer ' + index;",
+                  "    const age = 30 + index;",
+                  "    pm.sendRequest({",
+                  "      url: baseUrl + '/query',",
+                  "      method: 'POST',",
+                  "      header: { 'Content-Type': 'application/json' },",
+                  "      body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({ query: \"INSERT INTO users VALUES ('\" + name + \"', \" + age + \");\" })",
+                  "      }",
+                  "    }, function (err, res) {",
+                  "      if (err) {",
+                  "        failures.push('mixed write ' + index + ' network error: ' + err);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      let body;",
+                  "      try {",
+                  "        body = res.json();",
+                  "      } catch (parseError) {",
+                  "        failures.push('mixed write ' + index + ' returned non-JSON body');",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      if (res.code !== 200) {",
+                  "        failures.push('mixed write ' + index + ' returned status ' + res.code);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      try {",
+                  "        pm.expect(body.ok, 'mixed write ' + index + ' ok').to.eql(true);",
+                  "        pm.expect(body.action, 'mixed write ' + index + ' action').to.eql('insert');",
+                  "        pm.expect(body.usedIndex, 'mixed write ' + index + ' usedIndex').to.eql(false);",
+                  "        pm.expect(body.insertedId, 'mixed write ' + index + ' insertedId').to.be.a('number');",
+                  "        writeIds.push(body.insertedId);",
+                  "      } catch (assertError) {",
+                  "        failures.push(assertError.message);",
+                  "      }",
+                  "",
+                  "      finishOne();",
+                  "    });",
+                  "  }",
+                  "",
+                  "  for (let index = 0; index < readCount; index += 1) {",
+                  "    sendRead(index);",
+                  "  }",
+                  "",
+                  "  for (let index = 0; index < writeCount; index += 1) {",
+                  "    sendWrite(index);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/__postman__/mixed-burst-trigger"
+          }
+        },
+        {
+          "name": "06 Final mixed 80/20 metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const baseline = JSON.parse(pm.collectionVariables.get('mixedBurstBaselineMetrics') || '{}');",
+                  "const metrics = body.metrics || {};",
+                  "const readCount = Number(pm.collectionVariables.get('mixedReadCount') || '8');",
+                  "const writeCount = Number(pm.collectionVariables.get('mixedWriteCount') || '2');",
+                  "const insertIds = JSON.parse(pm.collectionVariables.get('mixedBurstInsertedIds') || '[]');",
+                  "",
+                  "function delta(key) {",
+                  "  return Number(metrics[key] || 0) - Number(baseline[key] || 0);",
+                  "}",
+                  "",
+                  "pm.test('mixed burst metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('mixed 80/20 metrics match expected read and write counts', function () {",
+                  "  pm.expect(insertIds.length).to.eql(writeCount);",
+                  "  pm.expect(delta('totalRequests')).to.eql(readCount + writeCount + 1);",
+                  "  pm.expect(delta('totalHealthRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalMetricsRequests')).to.eql(1);",
+                  "  pm.expect(delta('totalQueryRequests')).to.eql(readCount + writeCount);",
+                  "  pm.expect(delta('totalSelectRequests')).to.eql(readCount);",
+                  "  pm.expect(delta('totalInsertRequests')).to.eql(writeCount);",
+                  "  pm.expect(delta('totalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalSyntaxErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalQueryErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalInternalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalNotFoundResults')).to.eql(0);",
+                  "  pm.expect(delta('totalQueueFull')).to.eql(0);",
+                  "  pm.expect(delta('totalLockTimeouts')).to.eql(0);",
+                  "  pm.expect(Number(metrics.activeQueryRequests)).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        },
+        {
+          "name": "07 Capture write-heavy baseline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('write-heavy baseline metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('writeBurstBaselineMetrics', JSON.stringify(body.metrics || {}));",
+                  "pm.collectionVariables.set('writeBurstInsertedIds', '[]');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        },
+        {
+          "name": "08 Write-heavy burst",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dummyBody = pm.response.json();",
+                  "const total = Number(pm.collectionVariables.get('writeBurstCount') || '10');",
+                  "",
+                  "pm.test('write-heavy burst trigger request returns 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(dummyBody.status).to.eql('not_found');",
+                  "});",
+                  "",
+                  "pm.test('write-heavy burst completes with unique inserted ids', function (done) {",
+                  "  const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "  let pending = total;",
+                  "  const failures = [];",
+                  "  const insertedIds = [];",
+                  "",
+                  "  pm.expect(total).to.be.above(0);",
+                  "",
+                  "  function finalize() {",
+                  "    try {",
+                  "      pm.expect(insertedIds.length).to.eql(total);",
+                  "      pm.expect(new Set(insertedIds).size).to.eql(total);",
+                  "      pm.expect(failures, failures.join('\\n')).to.be.empty;",
+                  "      pm.collectionVariables.set('writeBurstInsertedIds', JSON.stringify(insertedIds));",
+                  "      done();",
+                  "    } catch (error) {",
+                  "      done(error);",
+                  "    }",
+                  "  }",
+                  "",
+                  "  function finishOne() {",
+                  "    pending -= 1;",
+                  "    if (pending === 0) {",
+                  "      finalize();",
+                  "    }",
+                  "  }",
+                  "",
+                  "  for (let index = 0; index < total; index += 1) {",
+                  "    const name = 'Write Burst ' + index;",
+                  "    const age = 40 + index;",
+                  "    pm.sendRequest({",
+                  "      url: baseUrl + '/query',",
+                  "      method: 'POST',",
+                  "      header: { 'Content-Type': 'application/json' },",
+                  "      body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({ query: \"INSERT INTO users VALUES ('\" + name + \"', \" + age + \");\" })",
+                  "      }",
+                  "    }, function (err, res) {",
+                  "      if (err) {",
+                  "        failures.push('write burst ' + index + ' network error: ' + err);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      let body;",
+                  "      try {",
+                  "        body = res.json();",
+                  "      } catch (parseError) {",
+                  "        failures.push('write burst ' + index + ' returned non-JSON body');",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      if (res.code !== 200) {",
+                  "        failures.push('write burst ' + index + ' returned status ' + res.code);",
+                  "        finishOne();",
+                  "        return;",
+                  "      }",
+                  "",
+                  "      try {",
+                  "        pm.expect(body.ok, 'write burst ' + index + ' ok').to.eql(true);",
+                  "        pm.expect(body.action, 'write burst ' + index + ' action').to.eql('insert');",
+                  "        pm.expect(body.usedIndex, 'write burst ' + index + ' usedIndex').to.eql(false);",
+                  "        pm.expect(body.insertedId, 'write burst ' + index + ' insertedId').to.be.a('number');",
+                  "        insertedIds.push(body.insertedId);",
+                  "      } catch (assertError) {",
+                  "        failures.push(assertError.message);",
+                  "      }",
+                  "",
+                  "      finishOne();",
+                  "    });",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/__postman__/write-burst-trigger"
+          }
+        },
+        {
+          "name": "09 Final write-heavy metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const baseline = JSON.parse(pm.collectionVariables.get('writeBurstBaselineMetrics') || '{}');",
+                  "const metrics = body.metrics || {};",
+                  "const total = Number(pm.collectionVariables.get('writeBurstCount') || '10');",
+                  "const insertIds = JSON.parse(pm.collectionVariables.get('writeBurstInsertedIds') || '[]');",
+                  "",
+                  "function delta(key) {",
+                  "  return Number(metrics[key] || 0) - Number(baseline[key] || 0);",
+                  "}",
+                  "",
+                  "pm.test('write-heavy burst metrics returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('write-heavy burst metrics match insert-only fan-out', function () {",
+                  "  pm.expect(insertIds.length).to.eql(total);",
+                  "  pm.expect(delta('totalRequests')).to.eql(total + 1);",
+                  "  pm.expect(delta('totalHealthRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalMetricsRequests')).to.eql(1);",
+                  "  pm.expect(delta('totalQueryRequests')).to.eql(total);",
+                  "  pm.expect(delta('totalSelectRequests')).to.eql(0);",
+                  "  pm.expect(delta('totalInsertRequests')).to.eql(total);",
+                  "  pm.expect(delta('totalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalSyntaxErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalQueryErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalInternalErrors')).to.eql(0);",
+                  "  pm.expect(delta('totalNotFoundResults')).to.eql(0);",
+                  "  pm.expect(delta('totalQueueFull')).to.eql(0);",
+                  "  pm.expect(delta('totalLockTimeouts')).to.eql(0);",
+                  "  pm.expect(Number(metrics.activeQueryRequests)).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics"
+          }
+        }
+      ]
+    }
+  ]
+}
